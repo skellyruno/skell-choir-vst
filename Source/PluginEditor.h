@@ -1,14 +1,40 @@
 #pragma once
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
-class SkellAudioProcessorEditor final : public juce::AudioProcessorEditor {
+#include <memory>
+#include <vector>
+
+class StageView final : public juce::Component, private juce::Timer {
 public:
-  explicit SkellAudioProcessorEditor(SkellAudioProcessor&);
-  void paint(juce::Graphics&) override;
-  void resized() override;
+    explicit StageView(OmniChoirAudioProcessor&);
+    void paint(juce::Graphics&) override;
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+    void mouseDoubleClick(const juce::MouseEvent&) override;
 private:
-  juce::Slider gain;
-  juce::Label title;
-  juce::AudioProcessorValueTreeState::SliderAttachment gainAttachment;
-  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SkellAudioProcessorEditor)
+    OmniChoirAudioProcessor& processor;
+    int dragging = -2;
+    juce::Point<float> worldToPoint(float x, float y) const;
+    juce::Point<float> pointToWorld(juce::Point<float> point) const;
+    juce::Rectangle<float> plot() const;
+    float value(const juce::String&) const;
+    void change(const juce::String&, float);
+    void startGesture(int);
+    void finishGesture(int);
+    void timerCallback() override { repaint(); }
+};
+
+class OmniChoirAudioProcessorEditor final : public juce::AudioProcessorEditor {
+public:
+    explicit OmniChoirAudioProcessorEditor(OmniChoirAudioProcessor&);
+    void paint(juce::Graphics&) override;
+    void resized() override;
+private:
+    OmniChoirAudioProcessor& processor;
+    StageView stage;
+    std::vector<std::unique_ptr<juce::Component>> controls;
+    void addDial(const juce::String& text, const juce::String& id);
+    void addChoice(const juce::String& text, const juce::String& id);
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OmniChoirAudioProcessorEditor)
 };
