@@ -10,7 +10,7 @@ int positiveModulo(int n,int d) { return (n%d+d)%d; }
 }
 
 void PitchTracker::prepare(float sampleRate) {
-    downsample=std::max(1,(int)std::round(sampleRate/4000.f));
+    downsample=std::max(1,(int)std::round(sampleRate/8000.f));
     rate=sampleRate/downsample;
     reset();
 }
@@ -26,15 +26,15 @@ bool PitchTracker::push(float sample) {
     history[(size_t)write]=averaged;
     write=(write+1)%capacity;
     count=std::min(capacity,count+1);
-    if (++hop<256 || count<760) return false;
+    if (++hop<384 || count<1520) return false;
     hop=0;
     return analyse();
 }
 bool PitchTracker::analyse() {
     // Centered normalized autocorrelation; ~60-800 Hz pitch range.
-    constexpr int windowSamples=720;
+    constexpr int windowSamples=1280;
     const int minLag=std::max(4,(int)(rate/750.f));
-    const int maxLag=std::min(88,(int)(rate/65.f));
+    const int maxLag=std::min(170,(int)(rate/65.f));
     float average=0, energy=0;
     for (int n=0;n<windowSamples;++n) average+=history[(size_t)((write-1-n+capacity)%capacity)];
     average/=windowSamples;
@@ -49,7 +49,7 @@ bool PitchTracker::analyse() {
     }
     float best=-1;
     int bestLag=0;
-    float correlation[89] {};
+    float correlation[171] {};
     for (int lag=minLag;lag<=maxLag;++lag) {
         float sum=0,e1=0,e2=0;
         for (int n=0;n<windowSamples-lag;++n) {
@@ -105,19 +105,88 @@ float GrainVoice::process(const std::vector<float>& history,int write,float wind
     return a*a*s1+b*b*s2;
 }
 
+void GrainVoice::processPair(const std::vector<float>& original,
+                             const std::vector<float>& excitation,int write,float window,
+                             float minDelay,float& raw,float& exc) {
+    ratio+=.0004f*(targetRatio-ratio);
+    phase=frac(phase+(ratio-1.f)/window);
+    const float other=frac(phase+.5f);
+    const float a=std::sin(pi*phase),b=std::sin(pi*other);
+    const float p1=minDelay+(1-phase)*window,p2=minDelay+(1-other)*window;
+    raw=a*a*read(original,write,p1)+b*b*read(original,write,p2);
+    exc=a*a*read(excitation,write,p1)+b*b*read(excitation,write,p2);
+}
+
+void ChoirEffect::updateLPC() {
+    // Regularized 10th-order LPC source/filter analysis. The predictor models
+    // the input's vocal-tract spectral envelope, then the granular engine
+    // shifts its excitation; the same envelope is reapplied at the OUTPUT pitch.
+    // This is conventional LPC formant compensation, not a neural voice model.
+    if(inputHistory.size()<1024 || inputEnv<.002f)return;
+    constexpr int frame=720;
+    float corr[lpcOrder+1] {};
+    const int size=(int)inputHistory.size();
+    for(int lag=0;lag<=lpcOrder;++lag) {
+        double sum=0;
+        for(int n=0;n<frame;++n) {
+            const float a=inputHistory[(size_t)((write-1-n+size)%size)];
+            const float b=inputHistory[(size_t)((write-1-n-lag+size)%size)];
+            sum+=(double)a*b;
+        }
+        corr[lag]=(float)(sum/frame);
+    }
+    corr[0]=corr[0]*1.035f+1.e-7f;
+    float a[lpcOrder+1] {};
+    double error=corr[0];
+    if(error<1.e-8)return;
+    for(int order=1;order<=lpcOrder;++order) {
+        double k=corr[order];
+        for(int j=1;j<order;++j)k+=a[j]*corr[order-j];
+        k=-k/std::max(1.e-9,error);
+        k=bound((float)k,-.89f,.89f);
+        float next[lpcOrder+1] {};
+        for(int j=1;j<order;++j)next[j]=a[j]+(float)k*a[order-j];
+        next[order]=(float)k;
+        for(int j=1;j<=order;++j)a[j]=next[j];
+        error*=1.-k*k;
+        if(error<=1.e-10)break;
+    }
+    for(int k=0;k<lpcOrder;++k) {
+        // Dampen resonant poles slightly for reliable audio-thread behavior.
+        const float target=a[k+1]*std::pow(.968f,(float)(k+1));
+        lpc[(size_t)k]=.77f*lpc[(size_t)k]+.23f*target;
+    }
+}
+
+float ChoirEffect::nextVariation(uint32_t& seed) {
+    // An LCG is sufficient for slow independent modulation, not cryptography.
+    // Using only unsigned arithmetic makes this repeatable and allocation-free.
+    seed=seed*1664525u+1013904223u;
+    return float(seed>>8)*(1.f/8388608.f)-1.f;
+}
+
 void ChoirEffect::prepare(double sampleRate) {
     sr=(float)std::max(16000.,sampleRate);
     window=.073f*sr;
     minDelay=.009f*sr;
     inputHistory.assign((size_t)(sr*.19f)+32,0.f);
+    excitationHistory.assign(inputHistory.size(),0.f);
     room.prepare(sr);
     tracker.prepare(sr);
     reset();
 }
 void ChoirEffect::reset() {
     std::fill(inputHistory.begin(),inputHistory.end(),0.f);
+    std::fill(excitationHistory.begin(),excitationHistory.end(),0.f);
+    lpc.fill(0);for(auto& state:formantState)state.fill(0);
+    formantWrite=lpcCounter=0;
     for (int i=0;i<(int)layers.size();++i) layers[(size_t)i].reset(i*.14159265f);
-    write=0; inputEnv=outputEnv=wetNow=0; lowPass.fill(0);
+    write=lfoStep=0; motionSeconds=0; inputEnv=outputEnv=wetNow=0; lowPass.fill(0);
+    singerLP.fill(0); singerHP.fill(0);leadFilterL=leadFilterR=0;
+    singerPitchWalk.fill(0);singerLevelWalk.fill(0);singerTimeWalk.fill(0);
+    singerLevelGain.fill(1.f);singerDelaySeconds.fill(0.f);
+    for(int i=0;i<sections*singers;++i)
+        singerSeeds[(size_t)i]=0xB5297A4Du + 1013904223u*(uint32_t)(i+1);
     tracker.reset(); room.reset();
     if (status==1) status=0;
     updateTargetRatios();
@@ -127,7 +196,13 @@ void ChoirEffect::setSavedScanRoot(int root,bool ready) {
     status=ready?2:0;
     updateTargetRatios();
 }
+void ChoirEffect::setScoreVoicing(int melody,const std::array<int,4>& notes) {
+    scoreVoicing=true;scoreMelody=melody;scorePitches=notes;updateTargetRatios();
+}
+void ChoirEffect::clearScoreVoicing() {scoreVoicing=false;updateTargetRatios();}
 void ChoirEffect::beginScan() {
+    // Discard analysis history from before the user pressed Scan.
+    tracker.reset();
     pitchHistogram.fill(0);
     scanSamples=matchedFrames=0; progress=0; status=1;
 }
@@ -142,15 +217,21 @@ void ChoirEffect::updateStage() {
         const float dx=p.x[(size_t)i]-p.micX;
         const float dy=p.y[(size_t)i]-p.micY;
         const float distance=std::sqrt(dx*dx+dy*dy+1.8f*1.8f);
-        // Microphone choice affects perceived width/directivity, not just pan.
-        const float side=bound(dx/std::max(2.0f,distance),-1.f,1.f);
-        const float widthScale[6]={.85f,1.3f,1.05f,1.f,1.15f,1.65f};
-        const float spread=bound(side*widthScale[std::max(0,std::min(5,p.micMode))]*(.85f+.15f*p.width),-.98f,.98f);
-        const float pan=(spread+1.f)*.25f*pi;
+        const float side=bound(dx/std::max(2.f,distance),-1.f,1.f);
+        const float arrayWidth[6]={.85f,1.3f,1.05f,1.f,1.15f,1.65f};
+        const float spread=bound(side*arrayWidth[std::max(0,std::min(5,p.micMode))]*(.85f+.15f*p.width),-.98f,.98f);
         const float attenuation=bound(3.f/(2.f+distance),.2f,.95f)*p.gain[(size_t)i];
-        panL[(size_t)i]=std::cos(pan)*attenuation;
-        panR[(size_t)i]=std::sin(pan)*attenuation;
-        tone[(size_t)i]=1.f-std::exp(-2*pi*bound((i<2?5500.f:3500.f)*(1.f-.025f*distance),800.f,8500.f)/sr);
+        for(int singer=0;singer<singers;++singer) {
+            const int k=i*singers+singer;
+            const float deviation=(singer-1.5f)*(.025f+.11f*p.humanize);
+            const float phi=(bound(spread+deviation,-.98f,.98f)+1.f)*.25f*pi;
+            // The same section reaches multiple different positions/capsules.
+            singerL[(size_t)k]=std::cos(phi)*attenuation/singers;
+            singerR[(size_t)k]=std::sin(phi)*attenuation/singers;
+            const float timbre=(singer-1.5f)*.11f*p.formant;
+            const float hz=bound((i<2?5100.f:3350.f)*(1.f-.022f*distance)*(1.f+timbre),750.f,9000.f);
+            singerTone[(size_t)k]=1.f-std::exp(-2*pi*hz/sr);
+        }
     }
 }
 void ChoirEffect::updateTargetRatios() {
@@ -166,7 +247,9 @@ void ChoirEffect::updateTargetRatios() {
     const int melody=current>=0?(int)std::round(current):60;
     for (int i=0;i<sections;++i) {
         int interval=semis[harmony][i];
-        if (p.mode==1 && status==2 && harmony!=2 && current>=0) {
+        if (scoreVoicing) {
+            interval=scorePitches[(size_t)i]-scoreMelody;
+        } else if (p.mode==1 && status==2 && harmony!=2 && current>=0) {
             const int wanted=melody+interval;
             int best=100, error=99;
             for(int n=wanted-3;n<=wanted+3;++n) {
@@ -178,9 +261,10 @@ void ChoirEffect::updateTargetRatios() {
             if(best!=100) interval=best-melody;
         }
         for(int singer=0;singer<singers;++singer) {
-            const float detune=(singer==0?-.09f:.09f)*p.ensemble;
-            const float shifted=bound((float)interval+detune,-18.f,12.f);
-            layers[(size_t)(i*singers+singer)].targetRatio=std::exp2(shifted/12.f);
+            const int k=i*singers+singer;
+            // Around +/- 14 cents with individual slow independent drift.
+            const float detune=(singer-1.5f)*.095f*p.ensemble*p.humanize;
+            singerBaseSemis[(size_t)k]=bound((float)interval+detune,-24.f,24.f);
         }
     }
 }
@@ -203,26 +287,74 @@ void ChoirEffect::render(float inL,float inR,float& outL,float& outR) {
             updateTargetRatios();
         }
     }
-    if(pitchUpdated && p.mode==1 && status==2) updateTargetRatios();
+    if(pitchUpdated && p.mode==1 && status==2 && !scoreVoicing) updateTargetRatios();
+    if (++lfoStep>=256) {
+        lfoStep=0;
+        for(int i=0;i<sections*singers;++i) {
+            // Independently wandering pitch, level and timing rather than a
+            // periodic oscillator shared by a fake choir. These are controlled
+            // by HUMANIZE and zero out when humanization is disabled.
+            auto& seed=singerSeeds[(size_t)i];
+            const float a=.022f; // slow ~0.6 s correlation at 48 kHz
+            singerPitchWalk[(size_t)i]+=
+                a*(nextVariation(seed)-singerPitchWalk[(size_t)i]);
+            singerLevelWalk[(size_t)i]+=
+                a*(nextVariation(seed)-singerLevelWalk[(size_t)i]);
+            singerTimeWalk[(size_t)i]+=
+                a*(nextVariation(seed)-singerTimeWalk[(size_t)i]);
+            const float depth=bound(p.humanize,0.f,1.f);
+            const float cents=depth*0.55f*singerPitchWalk[(size_t)i];
+            singerLevelGain[(size_t)i]=1.f+depth*.30f*singerLevelWalk[(size_t)i];
+            singerDelaySeconds[(size_t)i]=depth*.003f*singerTimeWalk[(size_t)i];
+            layers[(size_t)i].targetRatio=
+                std::exp2(bound(singerBaseSemis[(size_t)i]+cents,-24.f,24.f)/12.f);
+        }
+    }
+    motionSeconds+=1.f/sr;
     // Voice gate, low level noise exclusion. Do not gate room tails.
     inputEnv+=.0012f*(std::abs(mono)-inputEnv);
     const float threshold=.0010f+.013f*(1.f-p.sensitivity);
     const float goal=inputEnv>threshold?1.f:0.f;
     outputEnv+=(goal>outputEnv?.004f:.0006f)*(goal-outputEnv);
     const float pitchedInput=mono*outputEnv;
-    if(!inputHistory.empty())inputHistory[(size_t)write]=pitchedInput;
+    if(++lpcCounter>=2048) {lpcCounter=0;updateLPC();}
+    float excitation=pitchedInput;
+    const int historySize=(int)inputHistory.size();
+    for(int j=0;j<lpcOrder;++j) {
+        const int idx=(write-j-1+historySize)%historySize;
+        excitation+=lpc[(size_t)j]*inputHistory[(size_t)idx];
+    }
+    excitation=bound(excitation,-2.f,2.f);
+    inputHistory[(size_t)write]=pitchedInput;
+    excitationHistory[(size_t)write]=excitation;
     float choirL=0,choirR=0;
     for(int i=0;i<sections;++i) {
-        float voice=0;
-        for(int j=0;j<singers;++j)
-            voice+=layers[(size_t)(i*singers+j)].process(inputHistory,write,window,minDelay);
-        voice*=.5f;
-        // Section-specific high-frequency rolloff evokes choir distance / voice body.
-        lowPass[(size_t)i]+=tone[(size_t)i]*(voice-lowPass[(size_t)i]);
-        voice=.72f*lowPass[(size_t)i]+.28f*voice;
-        choirL+=voice*panL[(size_t)i];
-        choirR+=voice*panR[(size_t)i];
+        for(int j=0;j<singers;++j) {
+            const int k=i*singers+j;
+            // Singer-specific phasing/delay and a mild, fixed spectral-envelope
+            // distinction. This is an approximation, not neural identity cloning.
+            const float extra=(3.f*j+2.f*i)*.0015f*sr*p.humanize;
+            float x=0,exc=0;
+            layers[(size_t)k].processPair(inputHistory,excitationHistory,write,
+                                          window,minDelay+extra+singerDelaySeconds[(size_t)k]*sr,x,exc);
+            float formed=exc;
+            for(int j=0;j<lpcOrder;++j) {
+                const int idx=(formantWrite-j-1+lpcOrder)%lpcOrder;
+                formed-=lpc[(size_t)j]*formantState[(size_t)k][(size_t)idx];
+            }
+            formed=bound(formed,-1.6f,1.6f);
+            formantState[(size_t)k][(size_t)formantWrite]=formed;
+            // Blend the LPC-resynthesized, envelope-retaining component with
+            // the unmodified harmonizer. Higher CHARACTER means more LPC.
+            x=(1.f-.72f*p.formant)*x+(.72f*p.formant)*formed;
+            singerLP[(size_t)k]+=singerTone[(size_t)k]*(x-singerLP[(size_t)k]);
+            const float brightness=(j%2==0?.30f:.13f)*(1.f-.48f*p.formant);
+            const float voice=(1.f-brightness)*singerLP[(size_t)k]+brightness*x;
+            choirL+=voice*singerL[(size_t)k]*singerLevelGain[(size_t)k];
+            choirR+=voice*singerR[(size_t)k]*singerLevelGain[(size_t)k];
+        }
     }
+    formantWrite=(formantWrite+1)%lpcOrder;
     if (++write >= (int)inputHistory.size()) write=0;
     choirL*=.65f; choirR*=.65f;
     room.process(choirL,choirR,roomL,roomR);
@@ -231,7 +363,14 @@ void ChoirEffect::render(float inL,float inR,float& outL,float& outR) {
     wetNow+=.002f*((p.choirOn?p.mix:0.f)-wetNow);
     const float dry=1.f-wetNow;
     // Output remains dry when mix=0, useful for host automation and bypass.
-    outL=std::tanh(p.master*(dry*inL+wetNow*processedL));
-    outR=std::tanh(p.master*(dry*inR+wetNow*processedR));
+    // Dragging the white lead alters where the direct voice sits relative to
+    // the microphone. Home (0, 0.4 m) remains neutral for null-ish auditioning.
+    const float leadSide=bound(p.leadX/12.f,-.8f,.8f);
+    const float leftGain=1.f-.23f*std::max(0.f,leadSide);
+    const float rightGain=1.f+.23f*std::min(0.f,leadSide);
+    const float leadDistance=std::max(0.f,p.leadY-.4f);
+    const float fade=1.f/(1.f+leadDistance*.045f);
+    outL=std::tanh(p.master*(dry*inL*p.leadGain*fade*leftGain + wetNow*processedL));
+    outR=std::tanh(p.master*(dry*inR*p.leadGain*fade*rightGain + wetNow*processedR));
 }
 } // namespace choir

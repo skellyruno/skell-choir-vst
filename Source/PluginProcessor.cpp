@@ -27,6 +27,8 @@ OmniChoirAudioProcessor::OmniChoirAudioProcessor()
     raw.choirOn=get("choirOn");raw.mode=get("mode"); raw.harmony=get("harmony"); raw.ensemble=get("ensemble"); raw.sensitivity=get("sensitivity");
     raw.roomSize=get("roomSize"); raw.roomSeconds=get("roomSeconds"); raw.absorption=get("absorption");
     raw.diffusion=get("diffusion"); raw.wet=get("wet"); raw.mix=get("mix"); raw.master=get("master");
+    raw.leadX=get("leadX");raw.leadY=get("leadY");raw.leadGain=get("leadGain");
+    raw.humanize=get("humanize");raw.formant=get("formant");
 }
 juce::AudioProcessorValueTreeState::ParameterLayout OmniChoirAudioProcessor::createLayout() {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
@@ -49,6 +51,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout OmniChoirAudioProcessor::cre
     layout.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"harmony",1},
         "Harmony",juce::StringArray{"Major","Minor","Unison"},0));
     addFloat(layout,"ensemble","Ensemble Detune",0.f,1.f,.001f,.58f);
+    addFloat(layout,"humanize","Human Variation",0.f,1.f,.001f,.75f);
+    addFloat(layout,"formant","Singer Character",0.f,1.f,.001f,.5f);
+    addFloat(layout,"leadX","Lead X",-9.f,9.f,.01f,0.f,"m");
+    addFloat(layout,"leadY","Lead Y",-5.f,12.f,.01f,.4f,"m");
+    addFloat(layout,"leadGain","Lead Level",0.f,1.5f,.001f,1.f);
     addFloat(layout,"sensitivity","Input Sensitivity",0.f,1.f,.001f,.65f);
     addFloat(layout,"roomSize","Room Size",0.f,1.f,.001f,.52f);
     addFloat(layout,"roomSeconds","Reverb Time",.2f,10.f,.01f,2.4f,"s");
@@ -78,6 +85,9 @@ choir::FXParams OmniChoirAudioProcessor::readParams() const {
     p.choirOn=read(raw.choirOn)>.5f;p.mode=(int)read(raw.mode);p.harmony=(int)read(raw.harmony);p.ensemble=read(raw.ensemble);p.sensitivity=read(raw.sensitivity);
     p.roomSize=read(raw.roomSize);p.roomSeconds=read(raw.roomSeconds);p.absorption=read(raw.absorption);
     p.diffusion=read(raw.diffusion);p.wet=read(raw.wet);p.mix=read(raw.mix);p.master=read(raw.master);
+    // These GUI/APVTS controls existed in v0.4 but were not passed to DSP.
+    p.leadX=read(raw.leadX);p.leadY=read(raw.leadY);p.leadGain=read(raw.leadGain);
+    p.humanize=read(raw.humanize);p.formant=read(raw.formant);
     return p;
 }
 void OmniChoirAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiBuffer& midi) {

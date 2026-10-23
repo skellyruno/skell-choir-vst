@@ -32,6 +32,7 @@ public:
     int scanRoot() const { return savedRoot.load(std::memory_order_relaxed); }
     float trackedMidi() const { return visiblePitch.load(std::memory_order_relaxed); }
     float inputLevel() const { return visibleRms.load(std::memory_order_relaxed); }
+    choir::FXParams snapshotParams() const {return readParams();}
     juce::AudioProcessorValueTreeState parameters;
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 private:
@@ -45,6 +46,7 @@ private:
         std::atomic<float>* choirOn=nullptr,*mode=nullptr,*harmony=nullptr,*ensemble=nullptr,*sensitivity=nullptr;
         std::atomic<float>* roomSize=nullptr,*roomSeconds=nullptr,*absorption=nullptr,*diffusion=nullptr;
         std::atomic<float>* wet=nullptr,*mix=nullptr,*master=nullptr;
+        std::atomic<float>* leadX=nullptr,*leadY=nullptr,*leadGain=nullptr,*humanize=nullptr,*formant=nullptr;
     } raw;
     choir::FXParams readParams() const;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OmniChoirAudioProcessor)

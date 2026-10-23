@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
-project(OmniChoirFX VERSION 0.2.0 LANGUAGES C CXX)
+project(OmniChoirFX VERSION 0.5.0 LANGUAGES C CXX)
 
+option(OMNICHOIR_NATIVE_ONLY "Build JUCE-free tests without fetching JUCE" OFF)
+option(OMNICHOIR_BUILD_TESTS "Build JUCE-free native DSP tests" ${OMNICHOIR_NATIVE_ONLY})
+if(NOT OMNICHOIR_NATIVE_ONLY)
 include(FetchContent)
 if(DEFINED JUCE_PATH AND EXISTS "${JUCE_PATH}/CMakeLists.txt")
     add_subdirectory("${JUCE_PATH}" JUCE)
@@ -31,6 +34,12 @@ target_link_libraries(OmniChoirFX PRIVATE OmniChoirFXArt)
 target_sources(OmniChoirFX PRIVATE
     Source/ChoirFX.h
     Source/ChoirFX.cpp
+    Source/Offline/FullTakeScan.h
+    Source/Offline/FullTakeScan.cpp
+    Source/Offline/ExternalStemMixer.h
+    Source/Offline/ExternalStemMixer.cpp
+    Source/Offline/TakeWorker.h
+    Source/Offline/TakeWorker.cpp
     Source/ChoirDSP.h
     Source/ChoirDSP.cpp
     Source/PluginProcessor.h
@@ -49,7 +58,7 @@ target_link_libraries(OmniChoirFX PRIVATE
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
 
-option(OMNICHOIR_BUILD_TESTS "Build JUCE-free native DSP tests" OFF)
+endif() # native tests do not need JUCE
 if(OMNICHOIR_BUILD_TESTS)
     enable_testing()
     add_executable(OmniChoirDSPTests tests/dsp_tests.cpp Source/ChoirDSP.cpp)
@@ -58,4 +67,17 @@ if(OMNICHOIR_BUILD_TESTS)
     add_test(NAME voice_and_spatial_dsp COMMAND OmniChoirDSPTests)
     target_compile_features(OmniChoirFXTests PRIVATE cxx_std_17)
     add_test(NAME input_fx_and_scan COMMAND OmniChoirFXTests)
+    add_executable(OmniChoirStemMixerTests tests/stem_mixer_tests.cpp Source/Offline/ExternalStemMixer.cpp)
+    target_compile_features(OmniChoirStemMixerTests PRIVATE cxx_std_17)
+    add_test(NAME external_singer_stems COMMAND OmniChoirStemMixerTests)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME midi_and_python_interop
+                 COMMAND ${Python3_EXECUTABLE} -m unittest discover
+                         -s ${CMAKE_CURRENT_SOURCE_DIR}/tests -p test_interop_tools.py)
+    endif()
+    add_executable(OmniChoirFullTakeTests tests/fulltake_tests.cpp
+        Source/Offline/FullTakeScan.cpp Source/ChoirFX.cpp Source/ChoirDSP.cpp)
+    target_compile_features(OmniChoirFullTakeTests PRIVATE cxx_std_17)
+    add_test(NAME complete_take_scan_and_score COMMAND OmniChoirFullTakeTests)
 endif()

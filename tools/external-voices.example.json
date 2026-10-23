@@ -1,0 +1,13 @@
+{
+  "microphone": [0.0, 0.0],
+  "room": 0.2,
+  "output_db": -3,
+  "voices": [
+    { "file": "stems/soprano-1.wav", "section": "soprano", "offset_ms": 9, "gain_db": -7 },
+    { "file": "stems/soprano-2.wav", "section": "soprano", "offset_ms": 18, "gain_db": -8 },
+    { "file": "stems/alto-1.wav", "section": "alto", "offset_ms": 15, "gain_db": -7 },
+    { "file": "stems/tenor-1.wav", "section": "tenor", "offset_ms": 24, "gain_db": -7 },
+    { "file": "stems/bass-1.wav", "section": "bass", "offset_ms": 14, "gain_db": -7 },
+    { "file": "stems/lead.wav", "section": "lead", "offset_ms": 0, "gain_db": -4 }
+  ]
+}
