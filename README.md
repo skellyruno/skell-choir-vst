@@ -1,73 +1,69 @@
-# OmniChoir — spatial choir VST3 (source project)
+# OmniChoir FX — vocal-to-choir VST3 prototype
 
-**OmniChoir is a playable, MIDI-controlled VST3 instrument** based on the architecture and stage concept of the supplied browser choir demo, built on the supplied Skell Audio JUCE template. This repository contains complete project source, a working standalone native DSP engine, graphical editor, DAW automation/state serialization, and Windows/macOS build workflow. It is **not a precompiled `.vst3` binary**, and its generated voices are **not the original sampled/original-engine voices** of the browser demo.
+**Audio effect, not a MIDI instrument.** Insert OmniChoir FX on a vocal track in a DAW, press play and blend the original voice with four spatial SATB harmony parts (Soprano, Alto, Tenor, Bass). Built as a JUCE 8 VST3 for Windows and macOS. The editable cathedral stage is based on the supplied demo screenshots; a cropped image supplied by the user is embedded in `Assets/cathedral_stage.jpg`.
 
-## What works
+> **Prototype limitation:** This is a conventional *granular pitch-shift harmonizer*, not an AI voice changer and **not a realistic recording of 64 separate singers**. It layers a resampled source voice (including its existing lyrics and articulation), adjusts pitch, slight detune, section pan/distance, and an eight-delay-line cathedral room. Granular processing adds character, grain modulation, and approximately 9–82 ms of **variable** delay. Because delay is time-varying, the processor makes no fixed-latency reporting/zero-latency claim. Formant-preserving vocal morphing and natural voice variation are not implemented. The demo's original vocal library is not in the uploads.
 
-- Play immediately with MIDI; formant-filtered band-limited oscillators, 32 internal voices, four SATB sections with separate gains and positions
-- **MIDI channel 1:** auto-distribute pitches among Soprano / Alto / Tenor / Bass using tessitura overlaps; **MIDI channels 2, 3, 4, 5:** dedicated Soprano, Alto, Tenor, Bass respectively; channels 6–16 use the auto assignment
-- Keyboard note on/off, sustain pedal CC64, all notes off, 2-semitone pitch bend
-- Interactive stage GUI: drag four sections or the **YOU / MIC** marker; positions are saved and automatable
-- Six microphone arrays: AB, ORTF, XY, Mid/Side, Decca, Binaural-inspired
-- Stereo arrival-time / mic-pattern / distance simulation, native 8-line feedback delay network, room absorption/size/diffusion/RT60, voice attack/release, vowel (Ah/Eh/Ee/Oh/Oo), detune/ensemble, breath, master gain
-- All controls, including mic and section XY positions, appear as host automatable parameters; parameter state is saved with the DAW project
-- Works at 44.1, 48, 96 kHz and other typical host sample rates, without any hardcoded 48-kHz audio-thread assumption
+## Install/build
 
-## Build the VST3
+Requires CMake 3.22+, a C++17 compiler and JUCE 8.0.16-security. JUCE is fetched by CMake unless `-DJUCE_PATH=/absolute/path/to/JUCE` is set. Internet access is needed on the first build unless JUCE is installed locally.
 
-### Easiest: GitHub Actions
-
-1. Create an empty GitHub repository and upload **the contents** of this folder (including `.github`).
-2. Go to **Actions → Build OmniChoir VST3 → Run workflow**.
-3. After a successful build, download the `OmniChoir-Windows-VST3` or `OmniChoir-macOS-VST3` artifact.
-4. Unzip and copy the `.vst3` bundle to your platform's VST3 location, rescan plugins in the DAW, and insert **OmniChoir** as an **instrument** (not an audio effect).
-
-### Local
-
-Install CMake >=3.22, C++17 toolchain, and JUCE 8.0.12 (or allow CMake internet access to fetch it). On Windows with Visual Studio 2022:
-
-```sh
-cmake -S . -B build -A x64 -DJUCE_PATH=C:/JUCE
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --parallel 2
 ```
 
-macOS/Linux (with JUCE GUI/build prerequisites):
+- `OmniChoir FX.vst3` is produced in the generated build products, typically `build/OmniChoirFX_artefacts/Release/VST3/` (exact path depends on generator and OS).
+- On Windows copy the `.vst3` bundle to `C:\Program Files\Common Files\VST3\`.
+- On macOS copy it to `~/Library/Audio/Plug-Ins/VST3/` (or the system library plug-in folder), then rescan plug-ins in your DAW. Unsigned local macOS builds may need Gatekeeper approval.
+- Alternatively, create a GitHub repository containing **the contents of this folder** (not the outer directory) and use **Actions → Build OmniChoir FX VST3 → Run workflow**. The workflow is configured to build Windows and macOS VST3 bundles as downloadable artifacts.
 
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DJUCE_PATH=/path/to/JUCE
-cmake --build build --config Release -j2
+**This source is not a compiled VST3.** Native DSP tests passed locally, but this environment did not provide JUCE for a full host/plugin build, so DAW compatibility has not been verified.
+
+## Workflow
+
+1. Insert **OmniChoir FX** as an audio effect on a recorded solo vocal or live microphone track. Don't put it on an instrument/MIDI track.
+2. **LIVE mode** starts layering the input as the track plays. No prior analysis is required. Choose *Major*, *Minor*, or *Unison* for the voicing. The four pitches are intervals above/below the input: Major +7/+4/-5/-12 semitones; Minor +7/+3/-5/-12; Unison all 0, with slight ensemble detune. These are fixed-interval harmonies, not automatic chord recognition.
+3. **SCAN mode:** Start DAW playback, press **SCAN INPUT · 4 SEC**, and send a clear monophonic vocal for four seconds. The scanner uses autocorrelation to estimate sung notes and finds the **dominant pitch class** among that passage (e.g. C). Once complete, it uses that pitch class to snap the four moving harmony voices to a major/minor scale. This is a simple tonal anchor, **not a full song transcription or guaranteed correct musical key**. No audio is recorded to disk, and Scan does **not** import files or reconstruct a separate performance from a complete clip.
+4. Use the **CHOIR ON/OFF** button for wet-choir bypass while the dry vocal remains audible. **CHOIR MIX:** 0% is primarily direct original input, 100% is the resynthesized harmonizer and room. Adjust **SOPRANO / ALTO / TENOR / BASS** levels, **ENSEMBLE** for stereo detuning and **SENSITIVITY** to reject soft background noise.
+5. Drag the four colored singer groups on the stage and the gold microphone icon. These controls are DAW-automatable and influence each section's stereo direction, distance and tone. The **MIC ARRAY** menu offers AB, ORTF, XY, Mid/Side, Decca and Binaural *approximations*. The full physical-reflection stage algorithm from the JavaScript demo is not yet ported.
+6. **REVERB TIME**, **ROOM SIZE**, **ABSORPTION**, **DIFFUSION** and **ROOM RETURN** sculpt a cathedral-style FDN reverb. **OUTPUT** trims the level with gentle saturation.
+
+### Tips
+
+- Monophonic clean vocals produce more predictable results than full mixed music; any audio can be processed but the pitch detector may struggle with polyphonic instruments, breathy speech and noise.
+- For little or no added harmony, select *Unison* and turn up *Ensemble* to create a choir-like double/chorus effect.
+- For a more orchestral effect, use Major/Minor and a wetter room. Melodic harmonies may have obvious grain/pitch artifacts on fast transients.
+- Keep Mix below 100% when you want intelligible lead lyrics.
+- Scan and Live are both **streaming input effects**; Scan does not need a different plugin instance and does not process files in the background.
+- Host bypass may be used to stop the effect. Render/freeze in the DAW when the processed take sounds right.
+
+## Technical architecture
+
+- `Source/PluginProcessor.*`: JUCE 8 processor with input bus, stereo/mono layout support, automation, state saving and scan request/status atomics.
+- `Source/ChoirFX.*`: audio-effect DSP, input-gated stereo-to-mono pitch-layer source, autocorrelation note tracking at ~4 kHz, incremental scan pitch-class histogram, eight grain voices, stage panning and tone, real-time output blend.
+- `Source/ChoirDSP.*`: original native synth/FDN core retained so its `Room` eight-delay-line FDN can be reused. The old instrument is **not routed** by this plugin.
+- `Source/PluginEditor.*`: dark/gold cathedral GUI, scan button and progress, draggable SATB sections and microphone, JUCE parameter attachments.
+- `Assets/cathedral_stage.jpg`: background crop from supplied screenshot; all performers are drawn dynamically in JUCE.
+- `Reference/`: original demo source retained for continued porting, plus the five provided UI reference screenshots.
+- `tests/fx_tests.cpp`: JUCE-free sample-rate, scan, dry mix, numerical safety and stereo spatial tests.
+
+Run core tests without JUCE:
+
+```bash
+g++ -std=c++17 -O2 tests/fx_tests.cpp Source/ChoirFX.cpp Source/ChoirDSP.cpp -o fx_tests
+./fx_tests
 ```
 
-`JUCE_PATH` is optional; without it, the build downloads JUCE from GitHub. On macOS, distributing to other machines may require code signing/notarization. The project has not been built with JUCE in this environment; the portable DSP core has native tests.
+To build via CMake including both native DSP test executables: `cmake -S . -B build -DOMNICHOIR_BUILD_TESTS=ON`, `cmake --build build`, `ctest --test-dir build --output-on-failure`.
 
-## Test the audio DSP without JUCE
+## Future production upgrades
 
-```sh
-g++ -std=c++17 -O2 tests/dsp_tests.cpp Source/ChoirDSP.cpp -o dsp_tests
-./dsp_tests
-```
+1. Include real multisinger sample libraries or permissioned recorded SATB voices for human variation.
+2. Replace simple granular shifting with higher-quality time-stretch/pitch-shift with formant preservation, transient handling and bounded/deterministic host latency.
+3. Improve the detector to segment polyphonic recordings, identify chords/scale reliably and offer editable harmony lines.
+4. Add a genuine import-and-analyze/offline render workflow with file capture and non-destructive take management; current scan is *four seconds of incoming DAW audio*.
+5. Port the JavaScript per-singer image-source delay and mic/reflection model to the native engine, with performance profiling and host validation.
+6. Test/validate builds in REAPER, FL Studio, Ableton Live, Cubase and Logic (Logic needs AU, not VST3).
 
-## Where the original demo fits in
-
-The submitted demo's web worklet **plays prerecorded, already-rendered singers** and uses `OmniChoir.ChoirStage` to spatialize them; it loads `audio/female/epic-64/manifest.json`, `lead.json`, `lead.mp3`, section stem audio, and sprite images from remote paths. Those files and the original full sound-generation engine were not among the uploads. The `Reference/` directory retains the supplied JS and extracted source maps for later fidelity work.
-
-This VST3 is a **new native implementation** of a choir instrument following that design. It does not embed a website, require Web Audio, or depend on those missing prerecorded stems. It cannot claim exact vocal, microphone, or DSP sample-for-sample parity with the source demo. Specifically, the browser's staged prerecorded choir playback, singer-by-singer source grouping, custom room model, lead acapella control, and original visual artwork are not ported one-for-one.
-
-## Roadmap to reproduce the actual demo sound
-
-1. Supply the original multi-voice audio stems, manifest JSONs, and lead WAV/MP3 (or, better, original C++ choir voice synthesis engine) with rights to use and distribute them.
-2. Add an instrument sampler/voice bank or port the source choir synth. The VST already has MIDI/part routing and an audio output stage.
-3. Port the `SpatialRenderer`/`ChoirStage` algorithm and its numerical reference tests from the reference JS, rather than pretending an approximation is exact.
-4. Add bank browsing, editable SATB voicing presets, formation modes, sample library installation and authorization where needed.
-5. Test VST3 binaries in REAPER, Cubase, FL Studio, Studio One and Ableton, then package signed installers.
-
-## Structure
-
-- `Source/ChoirDSP.*`: native, JUCE-independent synthesis / array microphones / spatial arrival delays / reverb
-- `Source/PluginProcessor.*`: VST3 MIDI event handling, plugin parameters, state, stereo buses
-- `Source/PluginEditor.*`: native UI and draggable stage
-- `.github/workflows/build.yml`: Windows/macOS VST3 builds
-- `tests/dsp_tests.cpp`: core sound/event/room/stereo tests
-- `Reference/`: unmodified user-provided web demo plus human-readable source-map extraction
-
-Generated from the user's template. Prototype version **0.1.0**. The included GitHub workflow is buildable configuration but its run has not been independently verified here.
+This project is an inspectable working **source prototype**; no untested binary is represented as production-ready.

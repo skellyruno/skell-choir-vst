@@ -1,8 +1,9 @@
 #pragma once
 #include <JuceHeader.h>
-#include "ChoirDSP.h"
+#include "ChoirFX.h"
 #include <atomic>
 
+// Stereo/mono insert AUDIO EFFECT. No MIDI notes or pre-rendered choir samples.
 class OmniChoirAudioProcessor final : public juce::AudioProcessor {
 public:
     OmniChoirAudioProcessor();
@@ -12,11 +13,11 @@ public:
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
-    const juce::String getName() const override { return "OmniChoir"; }
-    bool acceptsMidi() const override { return true; }
+    const juce::String getName() const override { return "OmniChoir FX"; }
+    bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 10.0; }
+    double getTailLengthSeconds() const override { return 10.; }
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
     void setCurrentProgram(int) override {}
@@ -25,21 +26,26 @@ public:
     void getStateInformation(juce::MemoryBlock&) override;
     void setStateInformation(const void*, int) override;
 
+    void requestScan() { scanRequested.store(true,std::memory_order_release); }
+    int scanStatus() const { return visibleStatus.load(std::memory_order_relaxed); }
+    float scanProgress() const { return visibleProgress.load(std::memory_order_relaxed); }
+    int scanRoot() const { return savedRoot.load(std::memory_order_relaxed); }
+    float trackedMidi() const { return visiblePitch.load(std::memory_order_relaxed); }
+    float inputLevel() const { return visibleRms.load(std::memory_order_relaxed); }
     juce::AudioProcessorValueTreeState parameters;
-    std::atomic<int> activeVoiceCount { 0 };
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
-
 private:
-    choir::Instrument instrument;
-    // Cached raw parameter atomics; the audio thread never constructs strings or queries the tree.
+    choir::ChoirEffect effect;
+    std::atomic<bool> scanRequested { false }, restoreRequested { false };
+    std::atomic<int> visibleStatus { 0 }, savedRoot { 0 };
+    std::atomic<float> visibleProgress { 0 }, visiblePitch { -1 }, visibleRms { 0 };
     struct RawParameters {
         std::array<std::atomic<float>*,4> gains {}, xs {}, ys {};
-        std::atomic<float>* micX=nullptr, *micY=nullptr, *width=nullptr, *micMode=nullptr, *vowel=nullptr;
-        std::atomic<float>* attack=nullptr, *release=nullptr, *ensemble=nullptr, *breath=nullptr;
-        std::atomic<float>* roomSize=nullptr, *roomSeconds=nullptr, *absorption=nullptr, *diffusion=nullptr;
-        std::atomic<float>* wet=nullptr, *master=nullptr;
+        std::atomic<float>* micX=nullptr,*micY=nullptr,*width=nullptr,*micMode=nullptr;
+        std::atomic<float>* choirOn=nullptr,*mode=nullptr,*harmony=nullptr,*ensemble=nullptr,*sensitivity=nullptr;
+        std::atomic<float>* roomSize=nullptr,*roomSeconds=nullptr,*absorption=nullptr,*diffusion=nullptr;
+        std::atomic<float>* wet=nullptr,*mix=nullptr,*master=nullptr;
     } raw;
-    choir::Params readParams() const;
-    void handleMidi(const juce::MidiMessage&);
+    choir::FXParams readParams() const;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OmniChoirAudioProcessor)
 };

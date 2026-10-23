@@ -1,243 +1,289 @@
 #include "PluginEditor.h"
+#include <BinaryData.h>
 #include <array>
 #include <cmath>
 
 namespace {
-const juce::Colour bg(0xff0b1018), panel(0xff17222b), stroke(0xff35505b);
-const juce::Colour cream(0xffe9e5d8), muted(0xff98aab6), brass(0xffe0b877);
-const std::array<juce::Colour, 4> sectionColours {
-    juce::Colour(0xffe88d9d), juce::Colour(0xffe7b76f),
-    juce::Colour(0xff74cfb0), juce::Colour(0xff86b7eb)
+const juce::Colour bg(0xff09070e),panel(0xff18111a),stroke(0xff553c34);
+const juce::Colour cream(0xffefe1cb),muted(0xffa48f86),brass(0xffe8ba67);
+const std::array<juce::Colour,4> sectionColours {
+    juce::Colour(0xffdd8897),juce::Colour(0xffedcd80),
+    juce::Colour(0xff72bca2),juce::Colour(0xff749ad4)
 };
-const char* sectionNames[] = { "SOPRANOS", "ALTOS", "TENORS", "BASSES" };
+const char* sectionNames[]={"SOPRANOS","ALTOS","TENORS","BASSES"};
+const char* pitchClasses[]={"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
 
 class Dial final : public juce::Component {
 public:
-    Dial(OmniChoirAudioProcessor& p, const juce::String& title, const juce::String& id)
-        : attachment(p.parameters, id, dial) {
-        name.setText(title, juce::dontSendNotification);
-        name.setJustificationType(juce::Justification::centred);
-        name.setColour(juce::Label::textColourId, muted);
-        name.setFont(juce::Font(juce::FontOptions(12.0f).withStyle("Bold")));
+    Dial(OmniChoirAudioProcessor& p,const juce::String& title,const juce::String& id)
+        : attachment(p.parameters,id,dial) {
+        label.setText(title,juce::dontSendNotification);
+        label.setJustificationType(juce::Justification::centred);
+        label.setColour(juce::Label::textColourId,muted);
+        label.setFont(juce::Font(juce::FontOptions(11.f).withStyle("Bold")));
         dial.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        dial.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 92, 18);
-        dial.setColour(juce::Slider::rotarySliderFillColourId, brass);
-        dial.setColour(juce::Slider::rotarySliderOutlineColourId, stroke);
-        dial.setColour(juce::Slider::thumbColourId, cream);
-        dial.setColour(juce::Slider::textBoxTextColourId, cream);
-        dial.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-        dial.setColour(juce::Slider::textBoxBackgroundColourId, panel);
-        dial.setDoubleClickReturnValue(true, p.parameters.getParameter(id)->convertFrom0to1(p.parameters.getParameter(id)->getDefaultValue()));
+        dial.setTextBoxStyle(juce::Slider::TextBoxBelow,false,85,18);
+        dial.setColour(juce::Slider::rotarySliderFillColourId,brass);
+        dial.setColour(juce::Slider::rotarySliderOutlineColourId,stroke);
+        dial.setColour(juce::Slider::thumbColourId,cream);
+        dial.setColour(juce::Slider::textBoxTextColourId,cream);
+        dial.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
+        dial.setColour(juce::Slider::textBoxBackgroundColourId,panel);
+        if(auto* param=p.parameters.getParameter(id))
+            dial.setDoubleClickReturnValue(true,param->convertFrom0to1(param->getDefaultValue()));
         dial.setTooltip(title);
-        addAndMakeVisible(name); addAndMakeVisible(dial);
+        addAndMakeVisible(label);addAndMakeVisible(dial);
     }
-    void resized() override { name.setBounds(0, 1, getWidth(), 20); dial.setBounds(4, 20, getWidth()-8, getHeight()-20); }
+    void resized() override {label.setBounds(0,0,getWidth(),18);dial.setBounds(2,18,getWidth()-4,getHeight()-18);}
 private:
-    juce::Label name;
+    juce::Label label;
     juce::Slider dial;
     juce::AudioProcessorValueTreeState::SliderAttachment attachment;
 };
 class Choice final : public juce::Component {
 public:
-    Choice(OmniChoirAudioProcessor& p, const juce::String& title, const juce::String& id) {
-        name.setText(title, juce::dontSendNotification);
-        name.setJustificationType(juce::Justification::centred);
-        name.setColour(juce::Label::textColourId, muted);
-        name.setFont(juce::Font(juce::FontOptions(12.f).withStyle("Bold")));
-        combo.addItemList(p.parameters.getParameter(id)->getAllValueStrings(), 1);
-        attachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(p.parameters, id, combo);
-        combo.setColour(juce::ComboBox::backgroundColourId, panel);
-        combo.setColour(juce::ComboBox::textColourId, cream);
-        combo.setColour(juce::ComboBox::outlineColourId, stroke);
-        combo.setColour(juce::ComboBox::arrowColourId, brass);
-        addAndMakeVisible(name); addAndMakeVisible(combo);
+    Choice(OmniChoirAudioProcessor& p,const juce::String& title,const juce::String& id) {
+        label.setText(title,juce::dontSendNotification);
+        label.setJustificationType(juce::Justification::centred);
+        label.setColour(juce::Label::textColourId,muted);
+        label.setFont(juce::Font(juce::FontOptions(11.f).withStyle("Bold")));
+        combo.addItemList(p.parameters.getParameter(id)->getAllValueStrings(),1);
+        attachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(p.parameters,id,combo);
+        combo.setColour(juce::ComboBox::backgroundColourId,panel);
+        combo.setColour(juce::ComboBox::textColourId,cream);
+        combo.setColour(juce::ComboBox::outlineColourId,stroke);
+        combo.setColour(juce::ComboBox::arrowColourId,brass);
+        addAndMakeVisible(label);addAndMakeVisible(combo);
     }
-    void resized() override { name.setBounds(0, 6, getWidth(), 24); combo.setBounds(6, 44, getWidth()-12, 30); }
+    void resized() override {label.setBounds(0,7,getWidth(),24);combo.setBounds(5,42,getWidth()-10,28);}
 private:
-    juce::Label name;
+    juce::Label label;
     juce::ComboBox combo;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> attachment;
 };
+void drawFigure(juce::Graphics& g,juce::Point<float> center,juce::Colour colour,float size) {
+    const float x=center.x,y=center.y;
+    g.setColour(juce::Colours::black.withAlpha(.35f));
+    g.fillEllipse(x-size*.72f,y+size*.86f,size*1.44f,size*.21f);
+    juce::Path robe;
+    robe.startNewSubPath(x-size*.30f,y-size*.23f);
+    robe.cubicTo(x-size*.60f,y-size*.06f,x-size*.53f,y+size*.40f,x-size*.62f,y+size*.83f);
+    robe.quadraticTo(x,y+size*.97f,x+size*.62f,y+size*.83f);
+    robe.cubicTo(x+size*.53f,y+size*.40f,x+size*.60f,y-size*.06f,x+size*.30f,y-size*.23f);
+    robe.closeSubPath();
+    g.setGradientFill(juce::ColourGradient(colour.brighter(.26f),x-size*.4f,y-size*.4f,
+                                         colour.darker(.55f),x+size*.45f,y+size*.95f,false));
+    g.fillPath(robe);
+    g.setColour(colour.brighter(.45f).withAlpha(.65f));g.strokePath(robe,juce::PathStrokeType(.75f));
+    g.setColour(colour.brighter(.25f));g.fillEllipse(x-size*.25f,y-size*.74f,size*.50f,size*.58f);
+    g.setColour(juce::Colours::white.withAlpha(.32f));
+    g.drawEllipse(x-size*.25f,y-size*.74f,size*.50f,size*.58f,.7f);
+}
 }
 
-StageView::StageView(OmniChoirAudioProcessor& p) : processor(p) {
+StageView::StageView(OmniChoirAudioProcessor& p) : processor(p),
+    cathedral(juce::ImageCache::getFromMemory(BinaryData::cathedral_stage_jpg,
+                                             BinaryData::cathedral_stage_jpgSize)) {
     setMouseCursor(juce::MouseCursor::DraggingHandCursor);
-    startTimerHz(25);
+    startTimerHz(20);
 }
-juce::Rectangle<float> StageView::plot() const { return getLocalBounds().toFloat().reduced(24.f, 26.f); }
-juce::Point<float> StageView::worldToPoint(float x, float y) const {
-    const auto r = plot();
-    // Coordinates are metres: X horizontal and Y away from the microphones.
-    return { r.getCentreX() + x*r.getWidth()/21.f,
-             r.getBottom()-20.f - (y+2.f)/14.f*(r.getHeight()-48.f) };
+juce::Rectangle<float> StageView::plot() const {return getLocalBounds().toFloat().reduced(17.f,14.f);}
+juce::Point<float> StageView::worldToPoint(float x,float y) const {
+    const auto r=plot();
+    // Same draggable 2D stage concept as the web demo; performer X/Y in metres.
+    return {r.getCentreX()+x*r.getWidth()/21.f,
+            r.getBottom()-38.f-(y+1.1f)/14.f*(r.getHeight()-62.f)};
 }
-juce::Point<float> StageView::pointToWorld(juce::Point<float> point) const {
-    const auto r = plot();
-    return { (point.x-r.getCentreX())*21.f/r.getWidth(),
-            (r.getBottom()-20.f-point.y)*14.f/(r.getHeight()-48.f)-2.f };
+juce::Point<float> StageView::pointToWorld(juce::Point<float> pt) const {
+    const auto r=plot();
+    return {(pt.x-r.getCentreX())*21.f/r.getWidth(),
+            (r.getBottom()-38.f-pt.y)*14.f/(r.getHeight()-62.f)-1.1f};
 }
 float StageView::value(const juce::String& id) const {
-    return processor.parameters.getRawParameterValue(id)->load(std::memory_order_relaxed);
+    if(const auto* x=processor.parameters.getRawParameterValue(id))return x->load(std::memory_order_relaxed);
+    return 0.f;
 }
-void StageView::change(const juce::String& id, float v) {
-    if (auto* param = processor.parameters.getParameter(id))
-        param->setValueNotifyingHost(param->convertTo0to1(v));
+void StageView::change(const juce::String& id,float x) {
+    if(auto* param=processor.parameters.getParameter(id))param->setValueNotifyingHost(param->convertTo0to1(x));
 }
 void StageView::startGesture(int index) {
-    if (index == -2) return;
-    const auto suffix = index == -1 ? juce::String() : juce::String(index);
-    const auto a = index == -1 ? "micX" : "x"+suffix;
-    const auto b = index == -1 ? "micY" : "y"+suffix;
-    processor.parameters.getParameter(a)->beginChangeGesture();
-    processor.parameters.getParameter(b)->beginChangeGesture();
+    if(index==-2)return;
+    const auto suffix=juce::String(index);
+    processor.parameters.getParameter(index==-1?"micX":"x"+suffix)->beginChangeGesture();
+    processor.parameters.getParameter(index==-1?"micY":"y"+suffix)->beginChangeGesture();
 }
 void StageView::finishGesture(int index) {
-    if (index == -2) return;
-    const auto suffix = index == -1 ? juce::String() : juce::String(index);
-    const auto a = index == -1 ? "micX" : "x"+suffix;
-    const auto b = index == -1 ? "micY" : "y"+suffix;
-    processor.parameters.getParameter(a)->endChangeGesture();
-    processor.parameters.getParameter(b)->endChangeGesture();
+    if(index==-2)return;
+    const auto suffix=juce::String(index);
+    processor.parameters.getParameter(index==-1?"micX":"x"+suffix)->endChangeGesture();
+    processor.parameters.getParameter(index==-1?"micY":"y"+suffix)->endChangeGesture();
 }
 void StageView::paint(juce::Graphics& g) {
-    const auto full = getLocalBounds().toFloat();
-    g.setColour(panel); g.fillRoundedRectangle(full, 17);
-    g.setColour(stroke.withAlpha(.8f)); g.drawRoundedRectangle(full.reduced(1), 17, 1);
-    auto r = plot();
-    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff23323c), 0, r.getY(),
-                                          juce::Colour(0xff0e181d), 0, r.getBottom(), false));
-    g.fillRoundedRectangle(r, 10);
-    g.setColour(cream.withAlpha(.07f));
-    for (int i = -8; i <= 8; i += 2) {
-        const auto a = worldToPoint((float)i,-2), b = worldToPoint((float)i,12);
-        g.drawLine(a.x, a.y, b.x,b.y, .8f);
-    }
-    for (int j = 0; j <= 12; j += 2) {
-        auto a = worldToPoint(-10,(float)j), b = worldToPoint(10,(float)j);
-        g.drawLine(a.x,a.y,b.x,b.y,.8f);
-    }
-    g.setColour(muted.withAlpha(.8f));
-    g.setFont(juce::Font(juce::FontOptions(12).withStyle("Bold")));
-    g.drawText("UPSTAGE  /  DISTANCE IN METRES", (int)r.getX()+16, (int)r.getY()+8, 290, 20, juce::Justification::left);
-    g.drawText("DRAG A SECTION OR THE LISTENER", (int)r.getRight()-320, (int)r.getY()+8, 300, 20, juce::Justification::right);
-    for (int s = 0; s < 4; ++s) {
-        const float x = value("x"+juce::String(s)), y = value("y"+juce::String(s));
-        const auto center = worldToPoint(x,y);
-        const auto color = sectionColours[(size_t)s];
-        g.setColour(color.withAlpha(.07f));
-        g.fillEllipse(center.x-58,center.y-39,116,84);
-        g.setColour(color.withAlpha(.3f));
-        g.drawEllipse(center.x-58,center.y-39,116,84,1.0f);
-        // Stylized 16-person section; positions are listening geometry, not individual synth keys.
-        for (int row=3; row>=0; --row) for (int col=0; col<4; ++col) {
-            const auto pt = worldToPoint(x + (col-1.5f)*.49f + (row%2)*.16f,
-                                         y + (row-1.5f)*.49f);
-            const float rad = 3.5f + (3-row)*.45f;
-            g.setColour(color.withAlpha(.83f)); g.fillEllipse(pt.x-rad,pt.y-rad,rad*2,rad*2);
-            g.setColour(juce::Colours::white.withAlpha(.24f)); g.fillEllipse(pt.x-rad*.45f,pt.y-rad*.5f,rad*.7f,rad*.7f);
+    const auto full=getLocalBounds().toFloat();
+    g.setColour(panel);g.fillRoundedRectangle(full,18);
+    g.setColour(brass.withAlpha(.30f));g.drawRoundedRectangle(full.reduced(.9f),18,1.2f);
+    const auto r=plot();
+    g.saveState();g.reduceClipRegion(r.toNearestInt());
+    if(cathedral.isValid())g.drawImageWithin(cathedral,(int)r.getX(),(int)r.getY(),
+          (int)r.getWidth(),(int)r.getHeight(),juce::RectanglePlacement::stretchToFit);
+    else {g.setColour(bg);g.fillRect(r);}
+    // Simulated warm sanctuary wash over the perspective stage.
+    g.setGradientFill(juce::ColourGradient(juce::Colours::transparentBlack,r.getCentreX(),r.getY()+r.getHeight()*.24f,
+                                            bg.withAlpha(.84f),r.getCentreX(),r.getBottom(),false));
+    g.fillRect(r);
+    g.setColour(brass.withAlpha(.65f));
+    g.setFont(juce::Font(juce::FontOptions(11.f).withStyle("Bold")));
+    g.drawText("MOVE THE SINGERS · HEAR THEIR POSITION",(int)r.getX()+20,(int)r.getY()+13,360,22,juce::Justification::left);
+    g.setColour(cream.withAlpha(.48f));
+    g.drawText("LISTENING STAGE / METRES",(int)r.getRight()-254,(int)r.getY()+13,230,22,juce::Justification::right);
+    for(int i=0;i<4;++i) {
+        const float x=value("x"+juce::String(i)), y=value("y"+juce::String(i));
+        const juce::Colour colour=sectionColours[(size_t)i];
+        const float height=juce::jlimit(16.f,25.f,21.f-(y-5.f)*.5f);
+        for(int row=2;row>=0;--row)for(int col=0;col<4;++col) {
+            const float dx=(col-1.5f)*.46f+(row%2)*.12f;
+            const float dy=(row-1.f)*.45f;
+            drawFigure(g,worldToPoint(x+dx,y+dy),colour,height*(1.f+.05f*(2-row)));
         }
-        g.setFont(juce::Font(juce::FontOptions(13.f).withStyle("Bold")));
-        g.setColour(color);
-        g.drawText(sectionNames[s], (int)(center.x-70), (int)(center.y+29),140,21,juce::Justification::centred);
+        const auto center=worldToPoint(x,y);
+        g.setColour(colour);
+        g.setFont(juce::Font(juce::FontOptions(14.f).withStyle("Bold")));
+        g.drawText(sectionNames[i],(int)center.x-82,(int)center.y+34,164,23,juce::Justification::centred);
     }
-    const auto mic = worldToPoint(value("micX"), value("micY"));
-    g.setColour(brass.withAlpha(.18f)); g.fillEllipse(mic.x-29,mic.y-29,58,58);
-    g.setColour(brass); g.drawEllipse(mic.x-14,mic.y-14,28,28,2);
-    g.drawLine(mic.x-22,mic.y,mic.x+22,mic.y,1.3f);
-    g.drawLine(mic.x,mic.y-22,mic.x,mic.y+22,1.3f);
-    g.setFont(juce::Font(juce::FontOptions(12).withStyle("Bold")));
-    g.drawText("YOU / MIC",(int)mic.x-50,(int)mic.y+21,100,20,juce::Justification::centred);
+    const auto mic=worldToPoint(value("micX"),value("micY"));
+    g.setColour(brass.withAlpha(.17f));g.fillEllipse(mic.x-31,mic.y-27,62,54);
+    g.setColour(brass.withAlpha(.9f));g.drawEllipse(mic.x-22,mic.y-19,44,38,1.1f);
+    g.setColour(brass);g.fillRoundedRectangle(mic.x-4,mic.y-15,8,17,3);
+    g.drawLine(mic.x,mic.y+2,mic.x,mic.y+18,2);
+    g.drawLine(mic.x-9,mic.y+18,mic.x+9,mic.y+18,1.5f);
+    g.setFont(juce::Font(juce::FontOptions(12.f).withStyle("Bold")));
+    g.drawText("MIC",(int)mic.x-43,(int)mic.y+23,86,20,juce::Justification::centred);
+    const float rms=processor.inputLevel();
+    g.setColour(brass.withAlpha(.30f));g.fillRoundedRectangle(r.getX()+24,r.getBottom()-23,116,5,2.5f);
+    g.setColour(brass);g.fillRoundedRectangle(r.getX()+24,r.getBottom()-23,116*juce::jlimit(0.f,1.f,rms*7.f),5,2.5f);
     g.setColour(muted);
-    g.drawText(juce::String(processor.activeVoiceCount.load(std::memory_order_relaxed)) + " ACTIVE VOICES",
-               (int)r.getRight()-170, (int)r.getBottom()-25,154,18,juce::Justification::right);
+    g.setFont(juce::Font(juce::FontOptions(10.f)));
+    g.drawText("INPUT",(int)r.getX()+26,(int)r.getBottom()-42,70,18,juce::Justification::left);
+    g.restoreState();
 }
 void StageView::mouseDown(const juce::MouseEvent& e) {
-    dragging = -2;
-    float closest = 43.f;
-    const auto pointer = e.position;
-    const auto mic = worldToPoint(value("micX"), value("micY"));
-    if (pointer.getDistanceFrom(mic) < closest) { closest = pointer.getDistanceFrom(mic); dragging = -1; }
-    for (int i=0;i<4;++i) {
-        const auto center = worldToPoint(value("x"+juce::String(i)),value("y"+juce::String(i)));
-        const float d = pointer.getDistanceFrom(center);
-        if (d < closest) { closest = d; dragging = i; }
+    dragging=-2;
+    float closest=51.f;
+    const auto point=e.position;
+    const auto mic=worldToPoint(value("micX"),value("micY"));
+    if(point.getDistanceFrom(mic)<closest){closest=point.getDistanceFrom(mic);dragging=-1;}
+    for(int i=0;i<4;++i) {
+        const auto center=worldToPoint(value("x"+juce::String(i)),value("y"+juce::String(i)));
+        const float d=point.getDistanceFrom(center);
+        if(d<closest){closest=d;dragging=i;}
     }
-    if (dragging != -2) { startGesture(dragging); mouseDrag(e); }
+    if(dragging!=-2){startGesture(dragging);mouseDrag(e);}
 }
 void StageView::mouseDrag(const juce::MouseEvent& e) {
-    if (dragging == -2) return;
-    const auto pt = pointToWorld(e.position);
-    const bool mic = dragging == -1;
-    const auto suffix = juce::String(dragging);
-    change(mic ? "micX" : "x"+suffix, juce::jlimit(-9.f,9.f,pt.x));
-    change(mic ? "micY" : "y"+suffix, mic ? juce::jlimit(-8.f,8.f,pt.y) : juce::jlimit(.7f,11.f,pt.y));
+    if(dragging==-2)return;
+    const auto pt=pointToWorld(e.position);
+    const bool mic=dragging==-1;
+    const auto suffix=juce::String(dragging);
+    change(mic?"micX":"x"+suffix,juce::jlimit(-9.f,9.f,pt.x));
+    change(mic?"micY":"y"+suffix,mic?juce::jlimit(-8.f,8.f,pt.y):juce::jlimit(.7f,11.f,pt.y));
 }
-void StageView::mouseUp(const juce::MouseEvent&) { finishGesture(dragging); dragging = -2; }
+void StageView::mouseUp(const juce::MouseEvent&) {finishGesture(dragging);dragging=-2;}
 void StageView::mouseDoubleClick(const juce::MouseEvent& e) {
-    // Double-click the microphone to reset its position.
-    if (e.position.getDistanceFrom(worldToPoint(value("micX"),value("micY"))) < 40.f) {
-        startGesture(-1); change("micX",0); change("micY",0); finishGesture(-1);
+    if(e.position.getDistanceFrom(worldToPoint(value("micX"),value("micY")))<42.f) {
+        startGesture(-1);change("micX",0);change("micY",0);finishGesture(-1);
     }
 }
 
 OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProcessor& p)
-    : AudioProcessorEditor(&p), processor(p), stage(p) {
-    setSize(1120, 755);
-    setResizable(true, true);
-    setResizeLimits(880,660,1650,1100);
+    :AudioProcessorEditor(&p),processor(p),stage(p) {
+    setSize(1140,812);setResizable(true,true);setResizeLimits(900,720,1750,1200);
     addAndMakeVisible(stage);
-    // First control row: performance and section balance.
-    addChoice("VOWEL", "vowel");
-    addChoice("MIC ARRAY", "micMode");
-    addDial("SOPRANO", "gain0"); addDial("ALTO", "gain1");
-    addDial("TENOR", "gain2"); addDial("BASS", "gain3");
-    addDial("ATTACK", "attack"); addDial("RELEASE", "release");
-    addDial("ENSEMBLE", "ensemble");
-    // Second row: spatial and room controls.
-    addDial("BREATH", "breath"); addDial("MIC WIDTH", "width");
-    addDial("ROOM SIZE", "roomSize"); addDial("RT60", "roomSeconds");
-    addDial("ABSORPTION", "absorption"); addDial("DIFFUSION", "diffusion");
-    addDial("ROOM LEVEL", "wet"); addDial("OUTPUT", "master");
+    addAndMakeVisible(scanButton);
+    scanButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff503014));
+    scanButton.setColour(juce::TextButton::textColourOffId,juce::Colour(0xffffdfa0));
+    scanButton.setTooltip("Play your vocal track in the DAW, then scan four seconds of incoming audio.");
+    scanButton.onClick=[this] {
+        if(auto* mode=processor.parameters.getParameter("mode"))mode->setValueNotifyingHost(mode->convertTo0to1(1.f));
+        processor.requestScan();
+    };
+    addAndMakeVisible(choirButton);
+    choirButton.setClickingTogglesState(true);
+    choirButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff241817));
+    choirButton.setColour(juce::TextButton::buttonOnColourId,brass);
+    choirButton.setColour(juce::TextButton::textColourOffId,muted);
+    choirButton.setColour(juce::TextButton::textColourOnId,juce::Colours::black);
+    choirAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.parameters,"choirOn",choirButton);
+    addAndMakeVisible(scanStatus);
+    scanStatus.setColour(juce::Label::textColourId,cream);
+    scanStatus.setFont(juce::Font(juce::FontOptions(12.f)));
+    scanStatus.setJustificationType(juce::Justification::centredLeft);
+    // Row 1: LIVE/SCAN engine and SATB balance.
+    addChoice("PROCESSING","mode");addChoice("HARMONY","harmony");addChoice("MIC ARRAY","micMode");
+    addDial("SOPRANO","gain0");addDial("ALTO","gain1");addDial("TENOR","gain2");addDial("BASS","gain3");
+    addDial("ENSEMBLE","ensemble");addDial("SENSITIVITY","sensitivity");addDial("CHOIR MIX","mix");
+    // Row 2: spatial acoustics and master.
+    addDial("MIC SPACING","width");addDial("ROOM SIZE","roomSize");addDial("REVERB TIME","roomSeconds");
+    addDial("ABSORPTION","absorption");addDial("DIFFUSION","diffusion");
+    addDial("ROOM RETURN","wet");addDial("OUTPUT","master");
+    startTimerHz(15);
+    timerCallback();
 }
-void OmniChoirAudioProcessorEditor::addDial(const juce::String& text, const juce::String& id) {
-    auto comp = std::make_unique<Dial>(processor,text,id);
-    addAndMakeVisible(*comp); controls.push_back(std::move(comp));
+void OmniChoirAudioProcessorEditor::addDial(const juce::String& text,const juce::String& id) {
+    auto component=std::make_unique<Dial>(processor,text,id);
+    addAndMakeVisible(*component);controls.push_back(std::move(component));
 }
-void OmniChoirAudioProcessorEditor::addChoice(const juce::String& text, const juce::String& id) {
-    auto comp = std::make_unique<Choice>(processor,text,id);
-    addAndMakeVisible(*comp); controls.push_back(std::move(comp));
+void OmniChoirAudioProcessorEditor::addChoice(const juce::String& text,const juce::String& id) {
+    auto component=std::make_unique<Choice>(processor,text,id);
+    addAndMakeVisible(*component);controls.push_back(std::move(component));
+}
+void OmniChoirAudioProcessorEditor::timerCallback() {
+    juce::String msg;
+    switch(processor.scanStatus()) {
+        case 1:msg="ANALYZING INPUT  "+juce::String((int)(processor.scanProgress()*100.f))+"%";break;
+        case 2:msg="SCAN READY  ·  DOMINANT PITCH CLASS: "+juce::String(pitchClasses[processor.scanRoot()%12]);break;
+        case 3:msg="NO CLEAR PITCH DETECTED  ·  PLAY A SOLO VOCAL AND RETRY";break;
+        default:msg="LIVE: INSTANT CHOIR  ·  SCAN: PLAY AUDIO, THEN PRESS SCAN";break;
+    }
+    const float midi=processor.trackedMidi();
+    if(midi>=0 && std::isfinite(midi)) {
+        const int note=(int)std::round(midi);
+        msg+="     INPUT NOTE: "+juce::String(pitchClasses[((note%12)+12)%12])+juce::String((int)std::floor(note/12.f)-1);
+    }
+    choirButton.setButtonText(choirButton.getToggleState()?"◉  CHOIR ON":"○  CHOIR OFF");
+    scanStatus.setText(msg,juce::dontSendNotification);
 }
 void OmniChoirAudioProcessorEditor::paint(juce::Graphics& g) {
     g.fillAll(bg);
-    auto header = getLocalBounds().removeFromTop(78);
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff301b17),getWidth()*.5f,0,bg,getWidth()*.5f,170,false));
+    g.fillRect(getLocalBounds().removeFromTop(170));
     g.setColour(brass);
-    g.setFont(juce::Font(juce::FontOptions(31.f).withStyle("Bold")));
-    g.drawText("OMNICHOIR", header.removeFromLeft(270).translated(22,5), juce::Justification::centredLeft);
+    g.setFont(juce::Font(juce::FontOptions(30.f).withStyle("Bold")));
+    g.drawText("OMNICHOIR",23,12,280,45,juce::Justification::centredLeft);
     g.setColour(cream);
     g.setFont(juce::Font(juce::FontOptions(14.f).withStyle("Bold")));
-    g.drawText("SPATIAL CHOIR INSTRUMENT", 298,25,300,22,juce::Justification::left);
-    g.setColour(muted);
-    g.setFont(juce::Font(juce::FontOptions(12.f)));
-    g.drawText("CH 1: SMART SATB  •  CH 2–5: S / A / T / B  •  DRAG SINGERS TO RESHAPE THE SOUND",
-               300,47,getWidth()-320,18,juce::Justification::left);
-    g.setColour(stroke);
-    g.drawLine(22,77,(float)getWidth()-22,77,1.f);
+    g.drawText("LIVE CHOIRIFICATION  /  VOCAL EFFECT",301,24,430,24,juce::Justification::left);
+    g.setColour(muted);g.setFont(juce::Font(juce::FontOptions(11.f)));
+    g.drawText("INSERT ON A VOCAL TRACK  ·  PLAY INPUT AUDIO  ·  DRAG EACH SECTION AND THE MIC",
+               304,48,getWidth()-340,20,juce::Justification::left);
+    g.setColour(stroke);g.drawLine(20,76,(float)getWidth()-20,76,1.2f);
     g.setColour(brass);
     g.setFont(juce::Font(juce::FontOptions(12.f).withStyle("Bold")));
-    g.drawText("VOICE / SECTION",24,getHeight()-252,280,19,juce::Justification::left);
-    g.drawText("MICROPHONES / ROOM",24,getHeight()-126,280,19,juce::Justification::left);
+    g.drawText("CHOIR  /  HARMONIZER",24,getHeight()-239,270,20,juce::Justification::left);
+    g.drawText("MICROPHONES  /  CATHEDRAL",24,getHeight()-116,330,20,juce::Justification::left);
 }
 void OmniChoirAudioProcessorEditor::resized() {
-    const int margin = 20;
-    const int footer = 255;
-    stage.setBounds(margin, 90, getWidth()-margin*2, getHeight()-90-footer);
-    const int cellWidth = (getWidth()-margin*2)/9;
-    const int topY = getHeight()-229;
-    const int bottomY = getHeight()-105;
-    for (int i=0;i<(int)controls.size();++i) {
-        const bool second = i >= 9;
-        const int col = second ? i-9 : i;
-        const int x = margin + col*cellWidth + (second ? cellWidth/2 : 0);
-        controls[(size_t)i]->setBounds(x, second ? bottomY : topY, cellWidth-2, 99);
+    constexpr int margin=20,footer=245;
+    scanButton.setBounds(margin,86,195,36);
+    choirButton.setBounds(227,86,150,36);
+    scanStatus.setBounds(390,86,getWidth()-412,36);
+    stage.setBounds(margin,131,getWidth()-2*margin,getHeight()-131-footer);
+    const int topY=getHeight()-214;
+    const int bottomY=getHeight()-95;
+    const int cellWidth=(getWidth()-2*margin)/10;
+    for(int i=0;i<(int)controls.size();++i) {
+        const bool second=i>=10;
+        const int col=second?i-10:i;
+        const int x=margin+col*cellWidth+(second?cellWidth/2:0);
+        controls[(size_t)i]->setBounds(x,second?bottomY:topY,cellWidth-2,95);
     }
 }
