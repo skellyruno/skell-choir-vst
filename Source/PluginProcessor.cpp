@@ -70,11 +70,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout OmniChoirAudioProcessor::cre
     return layout;
 }
 void OmniChoirAudioProcessor::prepareToPlay(double sampleRate,int) {
-    effect.prepare(sampleRate);
-    effect.setSavedScanRoot(savedRoot.load(), visibleStatus.load()==2);
-    effect.setParameters(readParams());
+    staged.prepare(sampleRate);
+    staged.voices().setSavedScanRoot(savedRoot.load(), visibleStatus.load()==2);
+    staged.setParameters(readParams());
+    setLatencySamples(choir::StagedChoir::latencySamples);   // the stage works in 128-sample blocks; the dry lead is delayed to match
 }
-void OmniChoirAudioProcessor::releaseResources() { effect.reset(); }
+void OmniChoirAudioProcessor::releaseResources() { staged.reset(); }
 bool OmniChoirAudioProcessor::isBusesLayoutSupported(const BusesLayout& layout) const {
     const auto in=layout.getMainInputChannelSet(),out=layout.getMainOutputChannelSet();
     return (in==juce::AudioChannelSet::mono() || in==juce::AudioChannelSet::stereo())

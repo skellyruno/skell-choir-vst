@@ -356,9 +356,9 @@ void ChoirEffect::processVoices(float mono,float* voicesOut) {
             layers[(size_t)k].processPair(inputHistory,excitationHistory,write,
                                           window,minDelay+extra+singerDelaySeconds[(size_t)k]*sr,x,exc);
             float formed=exc;
-            for(int j=0;j<lpcOrder;++j) {
-                const int idx=(formantWrite-j-1+lpcOrder)%lpcOrder;
-                formed-=lpc[(size_t)j]*formantState[(size_t)k][(size_t)idx];
+            for(int tap=0;tap<lpcOrder;++tap) {
+                const int idx=(formantWrite-tap-1+lpcOrder)%lpcOrder;
+                formed-=lpc[(size_t)tap]*formantState[(size_t)k][(size_t)idx];
             }
             formed=bound(formed,-1.6f,1.6f);
             formantState[(size_t)k][(size_t)formantWrite]=formed;
