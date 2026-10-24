@@ -29,6 +29,7 @@ OmniChoirAudioProcessor::OmniChoirAudioProcessor()
     raw.diffusion=get("diffusion"); raw.wet=get("wet"); raw.mix=get("mix"); raw.master=get("master");
     raw.leadX=get("leadX");raw.leadY=get("leadY");raw.leadGain=get("leadGain");
     raw.humanize=get("humanize");raw.formant=get("formant");
+    raw.hall=get("hall");raw.hallSeconds=get("hallSeconds");
 }
 juce::AudioProcessorValueTreeState::ParameterLayout OmniChoirAudioProcessor::createLayout() {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
@@ -62,6 +63,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout OmniChoirAudioProcessor::cre
     addFloat(layout,"absorption","Absorption",0.f,1.f,.001f,.4f);
     addFloat(layout,"diffusion","Diffusion",0.f,1.f,.001f,.7f);
     addFloat(layout,"wet","Room Return",0.f,1.5f,.001f,.37f);
+    addFloat(layout,"hall","Hall",0.f,.5f,.001f,0.f);
+    addFloat(layout,"hallSeconds","Hall Time",.5f,8.f,.01f,2.4f,"s");
     addFloat(layout,"mix","Choir Mix",0.f,1.f,.001f,.78f);
     addFloat(layout,"master","Output",0.f,1.5f,.001f,.9f);
     return layout;
@@ -88,27 +91,25 @@ choir::FXParams OmniChoirAudioProcessor::readParams() const {
     // These GUI/APVTS controls existed in v0.4 but were not passed to DSP.
     p.leadX=read(raw.leadX);p.leadY=read(raw.leadY);p.leadGain=read(raw.leadGain);
     p.humanize=read(raw.humanize);p.formant=read(raw.formant);
+    p.hall=read(raw.hall);p.hallSeconds=read(raw.hallSeconds);
     return p;
 }
 void OmniChoirAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiBuffer& midi) {
     juce::ScopedNoDenormals denormals;
     juce::ignoreUnused(midi);
     if(restoreRequested.exchange(false,std::memory_order_acq_rel))
-        effect.setSavedScanRoot(savedRoot.load(),visibleStatus.load()==2);
-    if(scanRequested.exchange(false,std::memory_order_acq_rel)) effect.beginScan();
-    effect.setParameters(readParams());
+        staged.voices().setSavedScanRoot(savedRoot.load(),visibleStatus.load()==2);
+    if(scanRequested.exchange(false,std::memory_order_acq_rel)) staged.voices().beginScan();
+    staged.setParameters(readParams());
     const int n=buffer.getNumSamples(),inputs=getTotalNumInputChannels(),outputs=getTotalNumOutputChannels();
     if(outputs==0 || inputs==0) {buffer.clear();return;}
     auto* l=buffer.getWritePointer(0);
     auto* r=outputs>1?buffer.getWritePointer(1):nullptr;
-    for(int i=0;i<n;++i) {
-        const float inL=l[i],inR=inputs>1 && r!=nullptr?r[i]:inL;
-        float outL=0,outR=0;
-        effect.render(inL,inR,outL,outR);
-        l[i]=outL;
-        if(r!=nullptr)r[i]=outR;
-    }
+    // In place: the stage reads each input sample before it writes that output sample. Mono in -> the left channel
+    // feeds both sides of the lead path.
+    staged.process(l,(inputs>1 && r!=nullptr)?r:nullptr,l,r,n);
     for(int c=outputs;c<buffer.getNumChannels();++c)buffer.clear(c,0,n);
+    auto& effect=staged.voices();
     visibleStatus.store(effect.scanStatus(),std::memory_order_relaxed);
     visibleProgress.store(effect.scanProgress(),std::memory_order_relaxed);
     visiblePitch.store(effect.detectedMidi(),std::memory_order_relaxed);

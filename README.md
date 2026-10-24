@@ -1,6 +1,14 @@
-# OmniChoir FX 0.5 — live vocal choirification + full-take SATB scan + external singer tools
+# OmniChoir FX 0.6 — live vocal choirification + full-take SATB scan + external singer tools
 
 **VST3 effect source project — not a compiled plugin.** This is an upgrade of the OmniChoir FX starter using your original JS stage, worklet, renderer, latest `omnichoir-demo.js`, the five photographic references, and the screenshot of the larger GUI. The original JS files are kept verbatim in `Reference/` for continued native porting. The browser `AudioWorklet` itself cannot execute as a native VST3 audio callback; the relevant stage/mic/group interaction patterns and acoustic concepts are translated into C++.
+
+## v0.6 — the faithful stage (this release)
+
+Your JS stage is now a native C++ engine under `Source/Stage/`, and the 16 granular/LPC singers stand on it: real
+mic-array geometry, per-singer delay and air absorption, image-source early reflections, FDN late field, spot-mic
+follow, a movable lead and an extra hall, with a 128-sample reported latency. The offline render and the CLI use the
+same engine. See **`docs/V0_6_CHANGELOG.md`** (including the parameter behaviour changes) - and note the JUCE layer is
+still uncompiled; the native tests (`ctest`, `-DOMNICHOIR_NATIVE_ONLY=ON`) all pass.
 
 ## v0.5 — direct GUI stem/MIDI workflow and a real DSP fix
 

@@ -29,6 +29,11 @@ private:
     double rate = 48000;
     int64_t sample = 0, lastFrame = 0, activeStart = -1;
     int activePitch = -1, activeCount = 0, frames = 0;
+    int pendingPitch = -1, pendingCount = 0;   // a different note must persist a few frames before it replaces the active one
+    int64_t pendingTime = 0;
+    // Energy envelope: a note that begins after silence starts where the signal rose, not where pitch locked.
+    double env = 0, peakEnv = 0;
+    int64_t lastBelow = 0, noteFloor = 0;
     std::array<int,12> histogram {};
     std::vector<NoteEvent> notes;
     void observe(int midi, int64_t time);

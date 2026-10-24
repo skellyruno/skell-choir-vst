@@ -1,6 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
-#include "ChoirFX.h"
+#include "StagedChoir.h"
 #include <atomic>
 
 // Stereo/mono insert AUDIO EFFECT. No MIDI notes or pre-rendered choir samples.
@@ -36,7 +36,7 @@ public:
     juce::AudioProcessorValueTreeState parameters;
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 private:
-    choir::ChoirEffect effect;
+    choir::StagedChoir staged;   // v0.6: 16 singer layers -> faithful stage (mic arrays, reflections, FDN) -> hall -> lead
     std::atomic<bool> scanRequested { false }, restoreRequested { false };
     std::atomic<int> visibleStatus { 0 }, savedRoot { 0 };
     std::atomic<float> visibleProgress { 0 }, visiblePitch { -1 }, visibleRms { 0 };
@@ -46,7 +46,7 @@ private:
         std::atomic<float>* choirOn=nullptr,*mode=nullptr,*harmony=nullptr,*ensemble=nullptr,*sensitivity=nullptr;
         std::atomic<float>* roomSize=nullptr,*roomSeconds=nullptr,*absorption=nullptr,*diffusion=nullptr;
         std::atomic<float>* wet=nullptr,*mix=nullptr,*master=nullptr;
-        std::atomic<float>* leadX=nullptr,*leadY=nullptr,*leadGain=nullptr,*humanize=nullptr,*formant=nullptr;
+        std::atomic<float>* leadX=nullptr,*leadY=nullptr,*leadGain=nullptr,*humanize=nullptr,*formant=nullptr,*hall=nullptr,*hallSeconds=nullptr;
     } raw;
     choir::FXParams readParams() const;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OmniChoirAudioProcessor)

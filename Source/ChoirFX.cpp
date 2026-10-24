@@ -10,13 +10,18 @@ int positiveModulo(int n,int d) { return (n%d+d)%d; }
 }
 
 void PitchTracker::prepare(float sampleRate) {
-    downsample=std::max(1,(int)std::round(sampleRate/8000.f));
+    downsample=std::max(1,(int)std::round(sampleRate/16000.f));
     rate=sampleRate/downsample;
+    half=(int)(rate*.032f);                          // 32 ms difference window: >2 periods down to 65 Hz
+    maxLag=std::min((int)cmnd.size()-2,(int)(rate/65.f));
+    minLag=std::max(4,(int)(rate/1000.f));
+    hopSamples=std::max(1,(int)(rate*.008f));        // a new estimate every 8 ms
+    holdHops=20;                                     // keep the last pitch ~160 ms through consonants and breaths
     reset();
 }
 void PitchTracker::reset() {
-    history.fill(0); divide=write=count=hop=missed=0;
-    accumulator=level=0; currentMidi=-1;
+    history.fill(0); recent.fill(0); divide=write=count=hop=missed=recentCount=0;
+    accumulator=level=conf=0; currentMidi=-1;
 }
 bool PitchTracker::push(float sample) {
     accumulator += sample;
@@ -26,61 +31,62 @@ bool PitchTracker::push(float sample) {
     history[(size_t)write]=averaged;
     write=(write+1)%capacity;
     count=std::min(capacity,count+1);
-    if (++hop<384 || count<1520) return false;
+    if (++hop<hopSamples || count<half+maxLag+8) return false;
     hop=0;
     return analyse();
 }
 bool PitchTracker::analyse() {
-    // Centered normalized autocorrelation; ~60-800 Hz pitch range.
-    constexpr int windowSamples=1280;
-    const int minLag=std::max(4,(int)(rate/750.f));
-    const int maxLag=std::min(170,(int)(rate/65.f));
-    float average=0, energy=0;
-    for (int n=0;n<windowSamples;++n) average+=history[(size_t)((write-1-n+capacity)%capacity)];
-    average/=windowSamples;
-    for (int n=0;n<windowSamples;++n) {
-        const float v=history[(size_t)((write-1-n+capacity)%capacity)]-average;
-        energy+=v*v;
+    const int len=half+maxLag;
+    for (int i=0;i<len;++i) linear[(size_t)i]=history[(size_t)((write-len+i+capacity)%capacity)];
+    float mean=0, energy=0;
+    for (int i=len-half;i<len;++i) mean+=linear[(size_t)i];
+    mean/=half;
+    for (int i=len-half;i<len;++i) { const float v=linear[(size_t)i]-mean; energy+=v*v; }
+    level=std::sqrt(energy/half);
+    auto lost=[&]{ conf=0; if (++missed>holdHops) { currentMidi=-1; recentCount=0; } return false; };
+    if (level<.003f) return lost();
+    // difference function and its cumulative-mean normalisation
+    cmnd[0]=1.f;
+    double running=0;
+    for (int tau=1;tau<=maxLag;++tau) {
+        double sum=0;
+        for (int j=0;j<half;++j) { const float d=linear[(size_t)j]-linear[(size_t)(j+tau)]; sum+=(double)d*d; }
+        running+=sum;
+        cmnd[(size_t)tau]=running>1.e-12?(float)(sum*tau/running):1.f;
     }
-    level=std::sqrt(energy/windowSamples);
-    if (level<.003f) {
-        if (++missed>4) currentMidi=-1;
-        return false;
-    }
-    float best=-1;
-    int bestLag=0;
-    float correlation[171] {};
-    for (int lag=minLag;lag<=maxLag;++lag) {
-        float sum=0,e1=0,e2=0;
-        for (int n=0;n<windowSamples-lag;++n) {
-            const float a=history[(size_t)((write-1-n+capacity)%capacity)]-average;
-            const float b=history[(size_t)((write-1-n-lag+capacity)%capacity)]-average;
-            sum+=a*b; e1+=a*a; e2+=b*b;
-        }
-        const float v=sum/std::sqrt(std::max(1.e-12f,e1*e2));
-        correlation[lag]=v;
-        if (v>best) { best=v; bestLag=lag; }
-    }
-    if (best<.68f || bestLag<=0) {
-        if (++missed>4) currentMidi=-1;
-        return false;
-    }
-    // Prefer a short-lag peak near the best score to avoid jumping an octave
-    // on harmonic-rich singers. Then parabolic interpolation for sub-semitones.
-    for (int lag=minLag+1;lag<bestLag;++lag) {
-        if (correlation[lag]>=best*.96f && correlation[lag]>=correlation[lag-1]
-            && correlation[lag]>=correlation[lag+1]) { bestLag=lag; break; }
-    }
-    float refined=(float)bestLag;
-    if (bestLag>minLag && bestLag<maxLag) {
-        const float a=correlation[bestLag-1], b=correlation[bestLag], c=correlation[bestLag+1];
+    // first dip under the threshold. The depth is judged on the parabola through the dip, not on the raw lag
+    // samples: a period that falls between two lags (22.5 samples at 711 Hz) is otherwise shallower than its
+    // integer multiple (45) and the tracker lands an octave low.
+    int best=-1;
+    for (int tau=minLag+1;tau<maxLag;++tau) {
+        const float a=cmnd[(size_t)tau-1], b=cmnd[(size_t)tau], c=cmnd[(size_t)tau+1];
+        if (!(b<=a && b<c)) continue;
         const float denom=a-2*b+c;
-        if (std::abs(denom)>1.e-5f) refined+=bound(.5f*(a-c)/denom,-.5f,.5f);
+        const float depth=denom>1.e-6f?b-(a-c)*(a-c)/(8*denom):b;
+        if (depth<.15f) { best=tau; break; }
     }
+    if (best<0) {
+        float m=1.e9f;
+        for (int tau=minLag;tau<=maxLag;++tau) if (cmnd[(size_t)tau]<m) { m=cmnd[(size_t)tau]; best=tau; }
+        if (m>.35f) return lost();
+    }
+    float refined=(float)best;
+    if (best>minLag && best<maxLag) {
+        const float a=cmnd[(size_t)best-1], b=cmnd[(size_t)best], c=cmnd[(size_t)best+1];
+        const float denom=a-2*b+c;
+        if (std::abs(denom)>1.e-6f) refined+=bound(.5f*(a-c)/denom,-.5f,.5f);
+    }
+    conf=bound(1.f-cmnd[(size_t)best],0.f,1.f);
     const float midiNote=69.f+12.f*std::log2((rate/refined)/440.f);
-    if (!std::isfinite(midiNote)) return false;
-    if (currentMidi<0 || std::abs(currentMidi-midiNote)>9) currentMidi=midiNote;
-    else currentMidi=.55f*currentMidi+.45f*midiNote;
+    if (!std::isfinite(midiNote)) return lost();
+    // 3-frame median removes single-frame octave glitches without delaying real note changes by more than one hop
+    recent[(size_t)(recentCount%3)]=midiNote; ++recentCount;
+    float m3=midiNote;
+    if (recentCount>=3) {
+        std::array<float,3> s=recent; std::sort(s.begin(),s.end()); m3=s[1];
+    }
+    if (currentMidi<0 || std::abs(currentMidi-m3)>1.f) currentMidi=m3;   // a new note: lock at once
+    else currentMidi=.5f*currentMidi+.5f*m3;                              // vibrato and drift: light smoothing
     missed=0;
     return true;
 }
@@ -234,6 +240,20 @@ void ChoirEffect::updateStage() {
         }
     }
 }
+void ChoirEffect::updateTone(const std::array<float,sections>& distance) {
+    for (int i=0;i<sections;++i)
+        for(int singer=0;singer<singers;++singer) {
+            const int k=i*singers+singer;
+            const float timbre=(singer-1.5f)*.11f*p.formant;
+            const float hz=bound((i<2?5100.f:3350.f)*(1.f-.022f*distance[(size_t)i])*(1.f+timbre),750.f,9000.f);
+            singerTone[(size_t)k]=1.f-std::exp(-2*pi*hz/sr);
+        }
+}
+void ChoirEffect::setVoiceParameters(const FXParams& params) {
+    p=params;
+    updateTone({0.f,0.f,0.f,0.f});
+    updateTargetRatios();
+}
 void ChoirEffect::updateTargetRatios() {
     // Relative voicings: S fifth up, A third up, T fourth down, B octave down.
     // In Scan mode, scale snapping follows the detected dominant pitch-class;
@@ -268,8 +288,7 @@ void ChoirEffect::updateTargetRatios() {
         }
     }
 }
-void ChoirEffect::render(float inL,float inR,float& outL,float& outR) {
-    const float mono=.5f*(inL+inR);
+void ChoirEffect::processVoices(float mono,float* voicesOut) {
     const bool pitchUpdated=tracker.push(mono);
     if (status==1) {
         if (pitchUpdated && tracker.midi()>=0) {
@@ -327,7 +346,6 @@ void ChoirEffect::render(float inL,float inR,float& outL,float& outR) {
     excitation=bound(excitation,-2.f,2.f);
     inputHistory[(size_t)write]=pitchedInput;
     excitationHistory[(size_t)write]=excitation;
-    float choirL=0,choirR=0;
     for(int i=0;i<sections;++i) {
         for(int j=0;j<singers;++j) {
             const int k=i*singers+j;
@@ -350,12 +368,21 @@ void ChoirEffect::render(float inL,float inR,float& outL,float& outR) {
             singerLP[(size_t)k]+=singerTone[(size_t)k]*(x-singerLP[(size_t)k]);
             const float brightness=(j%2==0?.30f:.13f)*(1.f-.48f*p.formant);
             const float voice=(1.f-brightness)*singerLP[(size_t)k]+brightness*x;
-            choirL+=voice*singerL[(size_t)k]*singerLevelGain[(size_t)k];
-            choirR+=voice*singerR[(size_t)k]*singerLevelGain[(size_t)k];
+            voicesOut[k]=voice*singerLevelGain[(size_t)k];
         }
     }
     formantWrite=(formantWrite+1)%lpcOrder;
     if (++write >= (int)inputHistory.size()) write=0;
+}
+void ChoirEffect::render(float inL,float inR,float& outL,float& outR) {
+    const float mono=.5f*(inL+inR);
+    std::array<float,numVoices> voice {};
+    processVoices(mono,voice.data());
+    float choirL=0,choirR=0;
+    for(int k=0;k<numVoices;++k) {
+        choirL+=voice[(size_t)k]*singerL[(size_t)k];
+        choirR+=voice[(size_t)k]*singerR[(size_t)k];
+    }
     choirL*=.65f; choirR*=.65f;
     room.process(choirL,choirR,roomL,roomR);
     const float processedL=choirL+roomL*p.wet;

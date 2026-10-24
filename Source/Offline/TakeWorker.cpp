@@ -1,4 +1,5 @@
 #include "TakeWorker.h"
+#include "../StagedChoir.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -92,9 +93,12 @@ void TakeWorker::render() {
         .withBitsPerSample(24);
     auto writer=wav.createWriterFor(stream,options);
     if(!writer) {failed("Cannot create 24-bit WAV writer.");return;}
-    choir::ChoirEffect fx; fx.prepare(reader->sampleRate);
+    // Same engine as the live plugin. It lags its input by one 128-sample block: skip that pre-roll at the start
+    // and flush the tail at the end so the render stays time-aligned with the source take.
+    choir::StagedChoir fx; fx.prepare(reader->sampleRate);
     params.choirOn=true; params.mix=1.f;params.mode=0;
     fx.setParameters(params);
+    int skip=choir::StagedChoir::latencySamples;
     juce::AudioBuffer<float> inputBuffer((int)std::max(1u,reader->numChannels),4096);
     juce::AudioBuffer<float> outputBuffer(2,4096);
     size_t event=0,lastScoreEvent=size_t(-1);
@@ -112,14 +116,21 @@ void TakeWorker::render() {
                && now<=scoreCopy.notes[event].end) {
                 const auto& note=scoreCopy.notes[event];
                 // only recompute ratios at note boundaries (not every sample)
-                if(event!=lastScoreEvent) {fx.setScoreVoicing(note.melody,note.satb);lastScoreEvent=event;}
-            } else if(lastScoreEvent!=size_t(-1)) {fx.clearScoreVoicing();lastScoreEvent=size_t(-1);}
-            fx.render(l[i],r[i],outL[i],outR[i]);
+                if(event!=lastScoreEvent) {fx.voices().setScoreVoicing(note.melody,note.satb);lastScoreEvent=event;}
+            } else if(lastScoreEvent!=size_t(-1)) {fx.voices().clearScoreVoicing();lastScoreEvent=size_t(-1);}
+            fx.process(l+i,r+i,outL+i,outR+i,1);
         }
-        if(!writer->writeFromAudioSampleBuffer(outputBuffer,0,count)) {
+        const int drop=std::min(skip,count);skip-=drop;
+        if(count>drop && !writer->writeFromAudioSampleBuffer(outputBuffer,drop,count-drop)) {
             failed("Could not write WAV samples.");return;
         }
         fraction.store((float)((pos+count)/(double)total));
+    }
+    {   // flush the stage's last block of latency with silence
+        const int tail=choir::StagedChoir::latencySamples;
+        juce::AudioBuffer<float> silence(1,tail),flushed(2,tail);silence.clear();
+        fx.process(silence.getReadPointer(0),silence.getReadPointer(0),flushed.getWritePointer(0),flushed.getWritePointer(1),tail);
+        if(!threadShouldExit()&&!writer->writeFromAudioSampleBuffer(flushed,0,tail)){failed("Could not write WAV samples.");return;}
     }
     writer.reset(); // flush/close before signaling complete
     if(threadShouldExit()){destination.deleteFile();return;}

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(OmniChoirFX VERSION 0.5.0 LANGUAGES C CXX)
+project(OmniChoirFX VERSION 0.6.0 LANGUAGES C CXX)
 
 option(OMNICHOIR_NATIVE_ONLY "Build JUCE-free tests without fetching JUCE" OFF)
 option(OMNICHOIR_BUILD_TESTS "Build JUCE-free native DSP tests" ${OMNICHOIR_NATIVE_ONLY})
@@ -34,6 +34,13 @@ target_link_libraries(OmniChoirFX PRIVATE OmniChoirFXArt)
 target_sources(OmniChoirFX PRIVATE
     Source/ChoirFX.h
     Source/ChoirFX.cpp
+    Source/StagedChoir.h
+    Source/StagedChoir.cpp
+    Source/Stage/Common.h
+    Source/Stage/Mics.h
+    Source/Stage/Room.h
+    Source/Stage/Spatial.h
+    Source/Stage/Stage.h
     Source/Offline/FullTakeScan.h
     Source/Offline/FullTakeScan.cpp
     Source/Offline/ExternalStemMixer.h
@@ -67,6 +74,12 @@ if(OMNICHOIR_BUILD_TESTS)
     add_test(NAME voice_and_spatial_dsp COMMAND OmniChoirDSPTests)
     target_compile_features(OmniChoirFXTests PRIVATE cxx_std_17)
     add_test(NAME input_fx_and_scan COMMAND OmniChoirFXTests)
+    add_executable(OmniChoirTrackerTests tests/tracker_tests.cpp Source/Offline/FullTakeScan.cpp Source/ChoirFX.cpp Source/ChoirDSP.cpp)
+    target_compile_features(OmniChoirTrackerTests PRIVATE cxx_std_17)
+    add_test(NAME yin_tracker_and_scanner_accuracy COMMAND OmniChoirTrackerTests)
+    add_executable(OmniChoirStagedTests tests/staged_tests.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/ChoirDSP.cpp)
+    target_compile_features(OmniChoirStagedTests PRIVATE cxx_std_17)
+    add_test(NAME faithful_stage_live_path COMMAND OmniChoirStagedTests)
     add_executable(OmniChoirStemMixerTests tests/stem_mixer_tests.cpp Source/Offline/ExternalStemMixer.cpp)
     target_compile_features(OmniChoirStemMixerTests PRIVATE cxx_std_17)
     add_test(NAME external_singer_stems COMMAND OmniChoirStemMixerTests)
@@ -76,6 +89,8 @@ if(OMNICHOIR_BUILD_TESTS)
                  COMMAND ${Python3_EXECUTABLE} -m unittest discover
                          -s ${CMAKE_CURRENT_SOURCE_DIR}/tests -p test_interop_tools.py)
     endif()
+    add_executable(OmniChoirCalibrateTrim tests/calibrate_trim.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/ChoirDSP.cpp)
+    target_compile_features(OmniChoirCalibrateTrim PRIVATE cxx_std_17)
     add_executable(OmniChoirFullTakeTests tests/fulltake_tests.cpp
         Source/Offline/FullTakeScan.cpp Source/ChoirFX.cpp Source/ChoirDSP.cpp)
     target_compile_features(OmniChoirFullTakeTests PRIVATE cxx_std_17)

@@ -279,7 +279,8 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
     addDial("TENOR","gain2",1);addDial("BASS","gain3",1);
     addDial("ROOM SIZE","roomSize",2);addDial("REVERB TIME","roomSeconds",2);
     addDial("ABSORPTION","absorption",2);addDial("DIFFUSION","diffusion",2);
-    addDial("ROOM RETURN","wet",2);addDial("OUTPUT","master",2);
+    addDial("ROOM RETURN","wet",2);addDial("HALL","hall",2);
+    addDial("HALL TIME","hallSeconds",2);addDial("OUTPUT","master",2);
     addAndMakeVisible(importButton);addAndMakeVisible(exportButton);addAndMakeVisible(midiButton);
     midiButton.onClick=[this]{chooseMidi();};
     addAndMakeVisible(loadStemsButton);addAndMakeVisible(mixStemsButton);

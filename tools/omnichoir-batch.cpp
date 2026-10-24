@@ -3,7 +3,7 @@
 //        omnichoir-batch render input.wav arrangement.csv choir.wav
 // WAV input: little-endian 16-bit PCM or 32-bit float, mono/stereo.
 #include "../Source/Offline/FullTakeScan.h"
-#include "../Source/ChoirFX.h"
+#include "../Source/StagedChoir.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -96,21 +96,27 @@ void render(const char* wav,const char* scorePath,const char* output) {
     auto input=load(wav);const auto score=readScore(scorePath);
     if(score.notes.empty())throw std::runtime_error("No usable notes in CSV; scan a monophonic vocal");
     Audio out;out.sampleRate=input.sampleRate;out.channels=2;out.samples.resize(input.frames()*2);
-    choir::ChoirEffect fx;fx.prepare(input.sampleRate);choir::FXParams p;p.mix=1;p.master=.95f;
+    // The same engine as the live plugin (faithful stage). It works in 128-sample blocks, so its output lags the
+    // input by StagedChoir::latencySamples: feed that many extra silent samples and drop the first ones.
+    choir::StagedChoir fx;fx.prepare(input.sampleRate);choir::FXParams p;p.mix=1;p.master=.95f;
     fx.setParameters(p);size_t event=0,last=(size_t)-1;
-    for(size_t frame=0;frame<input.frames();++frame) {
+    const size_t lag=(size_t)choir::StagedChoir::latencySamples,frames=input.frames();
+    for(size_t frame=0;frame<frames+lag;++frame) {
         const double t=frame/(double)input.sampleRate;
         while(event<score.notes.size()&&t>score.notes[event].end)++event;
         if(event<score.notes.size()&&t>=score.notes[event].start) {
             if(last!=event) {
-                fx.setScoreVoicing(score.notes[event].melody,score.notes[event].satb);
+                fx.voices().setScoreVoicing(score.notes[event].melody,score.notes[event].satb);
                 last=event;
             }
-        } else if(last!=(size_t)-1) {fx.clearScoreVoicing();last=(size_t)-1;}
-        const float a=input.samples[frame*(size_t)input.channels];
-        const float b=input.channels==1?a:input.samples[frame*2+1];
-        float l=0,r=0;fx.render(a,b,l,r);
-        out.samples[frame*2]=l;out.samples[frame*2+1]=r;
+        } else if(last!=(size_t)-1) {fx.voices().clearScoreVoicing();last=(size_t)-1;}
+        float a=0,b=0;
+        if(frame<frames) {
+            a=input.samples[frame*(size_t)input.channels];
+            b=input.channels==1?a:input.samples[frame*2+1];
+        }
+        float l=0,r=0;fx.process(&a,&b,&l,&r,1);
+        if(frame>=lag){out.samples[(frame-lag)*2]=l;out.samples[(frame-lag)*2+1]=r;}
     }
     save(output,out);
     std::cout<<"Exported choir-only stereo WAV: "<<input.frames()/(double)input.sampleRate<<" seconds\n";
