@@ -82,6 +82,36 @@ void drawFigure(juce::Graphics& g,juce::Point<float> center,juce::Colour colour,
 }
 
 
+MeterStrip::MeterStrip(OmniChoirAudioProcessor& p):processor(p) {startTimerHz(20);}
+void MeterStrip::paint(juce::Graphics& g) {
+    const auto area=getLocalBounds().toFloat();
+    g.setColour(panel);g.fillRoundedRectangle(area,5.f);
+    g.setColour(stroke);g.drawRoundedRectangle(area.reduced(.5f),5.f,1.f);
+    const auto& m=processor.meters();
+    const float top=area.getY()+4.f,full=area.getHeight()-8.f;
+    // linear level -> a -54 dB .. 0 dB bar
+    const auto fraction=[](float level) {
+        return juce::jlimit(0.f,1.f,(20.f*std::log10(std::max(level,1.0e-5f))+54.f)/54.f);
+    };
+    float x=area.getX()+7.f;
+    const auto bar=[&](float level,juce::Colour colour) {
+        g.setColour(juce::Colours::white.withAlpha(.06f));g.fillRect(x,top,7.f,full);
+        const float h=full*fraction(level);
+        g.setColour(colour);g.fillRect(x,top+full-h,7.f,h);
+        x+=10.f;
+    };
+    for(int i=0;i<4;++i)bar(m.section[i].load(std::memory_order_relaxed)*4.f,sectionColours[(size_t)i]);
+    x+=4.f;
+    bar(m.leadIn.load(std::memory_order_relaxed),cream);
+    x+=4.f;
+    bar(m.outPeakL.load(std::memory_order_relaxed),brass);
+    bar(m.outPeakR.load(std::memory_order_relaxed),brass);
+    g.setColour(muted);g.setFont(juce::Font(juce::FontOptions(10.f).withStyle("Bold")));
+    const juce::String text=juce::String("WIDTH ")+juce::String((int)std::lround(100.f*m.width.load(std::memory_order_relaxed)))
+        +"%   CORR "+juce::String(m.correlation.load(std::memory_order_relaxed),2);
+    g.drawText(text,(int)x+6,(int)area.getY(),(int)(area.getRight()-x-8),(int)area.getHeight(),juce::Justification::centredLeft);
+}
+
 StageView::StageView(OmniChoirAudioProcessor& p):processor(p),
     cathedral(juce::ImageCache::getFromMemory(BinaryData::cathedral_stage_jpg,
                                               BinaryData::cathedral_stage_jpgSize)) {
@@ -158,6 +188,13 @@ void StageView::paint(juce::Graphics& g) {
     for(int i=0;i<4;++i) {
         const float x=value("x"+juce::String(i)), y=value("y"+juce::String(i));
         const auto c=sectionColours[(size_t)i].withMultipliedSaturation(on?1.f:.35f);
+        {   // live glow: how loudly this section is singing right now
+            const float level=processor.meters().section[i].load(std::memory_order_relaxed);
+            const float glow=juce::jlimit(0.f,1.f,(20.f*std::log10(std::max(level*4.f,1.0e-5f))+54.f)/54.f);
+            const auto gc=worldToPoint(x,y);
+            g.setColour(c.withAlpha(on?.04f+.30f*glow:0.f));
+            g.fillEllipse(gc.x-86.f,gc.y-44.f,172.f,88.f);
+        }
         const float singerSize=juce::jlimit(11.f,18.f,(getHeight()*.05f)-.18f*(y-5.f));
         for(int row=2;row>=0;--row)for(int col=0;col<4;++col) {
             const float dx=(col-1.5f)*.47f+(row%2)*.12f,dy=(row-1.f)*.53f;
@@ -240,10 +277,33 @@ void StageView::mouseDoubleClick(const juce::MouseEvent& e) {
 }
 
 OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProcessor& p)
-    :AudioProcessorEditor(&p),processor(p),stage(p) {
+    :AudioProcessorEditor(&p),processor(p),stage(p),meterStrip(p) {
     // 71% of previous 1140x812 pixel dimensions = 29% smaller on both axes.
     setSize(810,577);setResizable(true,true);setResizeLimits(720,510,1400,1000);
     addAndMakeVisible(stage);addAndMakeVisible(scanButton);addAndMakeVisible(choirButton);
+    addAndMakeVisible(meterStrip);addAndMakeVisible(presetBox);
+    addAndMakeVisible(abButton);addAndMakeVisible(irButton);addAndMakeVisible(irClearButton);
+    presetBox.setTextWhenNothingSelected("STAGE PRESET");
+    for(int i=0;i<choir::kNumStagePresets;++i)presetBox.addItem(choir::kStagePresets[i].name,i+1);
+    presetBox.setTooltip("Sets placement and room only; harmony, mix, lead level and output are never touched.");
+    presetBox.onChange=[this] {
+        const int index=presetBox.getSelectedId()-1;
+        if(index>=0)processor.applyStagePreset(index);
+        presetBox.setSelectedId(0,juce::dontSendNotification);
+    };
+    abButton.setClickingTogglesState(true);
+    abButton.setTooltip("A/B: the faithful stage against the classic v0.5 stage. Same latency, so switching never shifts timing.");
+    abAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.parameters,"classicStage",abButton);
+    irButton.onClick=[this]{chooseImpulseResponse();};
+    irClearButton.onClick=[this]{processor.clearImpulseResponse();};
+    irButton.setTooltip("Load a room recording (impulse response) for the HALL. The HALL dial sets how much you hear.");
+    irClearButton.setTooltip("Back to the algorithmic hall");
+    for(auto* b:{&abButton,&irButton,&irClearButton}) {
+        b->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff342522));
+        b->setColour(juce::TextButton::textColourOffId,cream);
+    }
+    abButton.setColour(juce::TextButton::buttonOnColourId,juce::Colour(0xff6e8f5a));
+    abButton.setColour(juce::TextButton::textColourOnId,juce::Colours::black);
     scanButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff54341f));
     scanButton.setColour(juce::TextButton::textColourOffId,juce::Colour(0xffffdca0));
     scanButton.setTooltip("Legacy 4-second analysis of incoming DAW audio. Full take import is on SCAN page.");
@@ -262,8 +322,8 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
     scanStatus.setColour(juce::Label::textColourId,cream);
     scanStatus.setFont(juce::Font(juce::FontOptions(10.f)));
     addAndMakeVisible(scanStatus);
-    const char* names[]={"VOICE", "SPACE", "ROOM", "SCAN / EDIT", "STEMS"};
-    for(int i=0;i<5;++i) {
+    const char* names[]={"VOICE", "SPACE", "ROOM", "SCAN / EDIT", "STEMS", "SINGERS"};
+    for(int i=0;i<6;++i) {
         tabs[(size_t)i].setButtonText(names[i]);
         tabs[(size_t)i].onClick=[this,i]{selectTab(i);};
         addAndMakeVisible(tabs[(size_t)i]);
@@ -281,6 +341,8 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
     addDial("ABSORPTION","absorption",2);addDial("DIFFUSION","diffusion",2);
     addDial("ROOM RETURN","wet",2);addDial("HALL","hall",2);
     addDial("HALL TIME","hallSeconds",2);addDial("OUTPUT","master",2);
+    addDial("VOICE BLEND","voiceBlend",5);addDial("VOWEL","choirVowel",5);addDial("FOLLOW LEAD","vowelFollow",5);
+    addDial("BREATH","choirBreath",5);addDial("VIBRATO","vibrato",5);
     addAndMakeVisible(importButton);addAndMakeVisible(exportButton);addAndMakeVisible(midiButton);
     midiButton.onClick=[this]{chooseMidi();};
     addAndMakeVisible(loadStemsButton);addAndMakeVisible(mixStemsButton);
@@ -332,7 +394,7 @@ void OmniChoirAudioProcessorEditor::selectTab(int page) {
     stemsHelp.setVisible(page==4);stemsStatus.setVisible(page==4);
     notes.setVisible(show);takeStatus.setVisible(show);
     for(auto& b:adjust)b.setVisible(show);
-    for(int i=0;i<5;++i) {
+    for(int i=0;i<6;++i) {
         tabs[(size_t)i].setColour(juce::TextButton::buttonColourId,
             i==page?brass:juce::Colour(0xff33221d));
         tabs[(size_t)i].setColour(juce::TextButton::textColourOffId,
@@ -352,6 +414,17 @@ void OmniChoirAudioProcessorEditor::chooseInput() {
                                       &&safe->processor.parameters.getRawParameterValue("harmony")->load()<1.5f;
                     safe->take.scanFile(input,minor);
                 }
+            }
+        });
+}
+void OmniChoirAudioProcessorEditor::chooseImpulseResponse() {
+    chooser=std::make_unique<juce::FileChooser>("Select a room impulse response",juce::File{},"*.wav;*.aif;*.aiff;*.flac");
+    juce::Component::SafePointer<OmniChoirAudioProcessorEditor> safe(this);
+    chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [safe](const juce::FileChooser& f){
+            if(safe!=nullptr) {
+                const auto file=f.getResult();
+                if(file.existsAsFile())safe->processor.loadImpulseResponse(file);
             }
         });
 }
@@ -423,6 +496,9 @@ void OmniChoirAudioProcessorEditor::timerCallback() {
     }
     scanStatus.setText(msg,juce::dontSendNotification);
     choirButton.setButtonText(choirButton.getToggleState()?"CHOIR ON":"CHOIR OFF");
+    abButton.setButtonText(abButton.getToggleState()?"STAGE: CLASSIC v0.5":"STAGE: FAITHFUL");
+    irButton.setButtonText(processor.hasImpulseResponse()?processor.impulseResponseName().toUpperCase().substring(0,10):juce::String("LOAD IR"));
+    irClearButton.setEnabled(processor.hasImpulseResponse());
     const int status=take.status();
     if(status!=lastTakeStatus && status!=1 &&status!=3 && status!=5 && status!=7) {
         visibleScore=take.snapshot();notes.updateContent();
@@ -468,11 +544,15 @@ void OmniChoirAudioProcessorEditor::resized() {
     choirButton.setBounds(168,54,112,29);
     scanStatus.setBounds(290,54,w-304,29);
     const int tabsY=h-155;
-    stage.setBounds(m,91,w-2*m,tabsY-97);
-    const int tabWidth=(w-2*m)/5;
-    for(int i=0;i<5;++i)tabs[(size_t)i].setBounds(m+i*tabWidth,tabsY,tabWidth-2,27);
+    presetBox.setBounds(m,88,150,26);
+    abButton.setBounds(m+158,88,132,26);
+    irButton.setBounds(m+298,88,78,26);irClearButton.setBounds(m+380,88,26,26);
+    meterStrip.setBounds(m+414,88,std::max(60,w-2*m-414),26);
+    stage.setBounds(m,120,w-2*m,tabsY-126);
+    const int tabWidth=(w-2*m)/6;
+    for(int i=0;i<6;++i)tabs[(size_t)i].setBounds(m+i*tabWidth,tabsY,tabWidth-2,27);
     const int controlsY=tabsY+32, controlsH=h-controlsY-23;
-    for(int page=0;page<3;++page) {
+    for(const int page:{0,1,2,5}) {
         std::vector<juce::Component*> pageControls;
         for(auto& c:controls)if(c.page==page)pageControls.push_back(c.item.get());
         const int n=(int)pageControls.size(),cw=(w-2*m)/std::max(1,n);

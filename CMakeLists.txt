@@ -36,6 +36,10 @@ target_sources(OmniChoirFX PRIVATE
     Source/ChoirFX.cpp
     Source/StagedChoir.h
     Source/StagedChoir.cpp
+    Source/FormantChoir.h
+    Source/FormantChoir.cpp
+    Source/StagePresets.h
+    Source/Stage/Convolver.h
     Source/Stage/Common.h
     Source/Stage/Mics.h
     Source/Stage/Room.h
@@ -69,17 +73,29 @@ endif() # native tests do not need JUCE
 if(OMNICHOIR_BUILD_TESTS)
     enable_testing()
     add_executable(OmniChoirDSPTests tests/dsp_tests.cpp Source/ChoirDSP.cpp)
-    add_executable(OmniChoirFXTests tests/fx_tests.cpp Source/ChoirFX.cpp Source/ChoirDSP.cpp)
+    add_executable(OmniChoirFXTests tests/fx_tests.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
     target_compile_features(OmniChoirDSPTests PRIVATE cxx_std_17)
     add_test(NAME voice_and_spatial_dsp COMMAND OmniChoirDSPTests)
     target_compile_features(OmniChoirFXTests PRIVATE cxx_std_17)
     add_test(NAME input_fx_and_scan COMMAND OmniChoirFXTests)
-    add_executable(OmniChoirTrackerTests tests/tracker_tests.cpp Source/Offline/FullTakeScan.cpp Source/ChoirFX.cpp Source/ChoirDSP.cpp)
+    add_executable(OmniChoirTrackerTests tests/tracker_tests.cpp Source/Offline/FullTakeScan.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
     target_compile_features(OmniChoirTrackerTests PRIVATE cxx_std_17)
     add_test(NAME yin_tracker_and_scanner_accuracy COMMAND OmniChoirTrackerTests)
-    add_executable(OmniChoirStagedTests tests/staged_tests.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/ChoirDSP.cpp)
+    add_executable(OmniChoirStagedTests tests/staged_tests.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
     target_compile_features(OmniChoirStagedTests PRIVATE cxx_std_17)
     add_test(NAME faithful_stage_live_path COMMAND OmniChoirStagedTests)
+    add_executable(OmniChoirFormantTests tests/formant_tests.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
+    target_compile_features(OmniChoirFormantTests PRIVATE cxx_std_17)
+    add_test(NAME formant_choir_voice_engine COMMAND OmniChoirFormantTests)
+    add_executable(OmniChoirConvolverTests tests/convolver_tests.cpp)
+    target_compile_features(OmniChoirConvolverTests PRIVATE cxx_std_17)
+    add_test(NAME impulse_response_convolver COMMAND OmniChoirConvolverTests)
+    add_executable(OmniChoirFeatureTests tests/features_tests.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
+    target_compile_features(OmniChoirFeatureTests PRIVATE cxx_std_17)
+    add_test(NAME stems_meters_ab_ir_formant_chain COMMAND OmniChoirFeatureTests)
+    add_executable(OmniChoirPresetTests tests/preset_tests.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
+    target_compile_features(OmniChoirPresetTests PRIVATE cxx_std_17)
+    add_test(NAME stage_presets COMMAND OmniChoirPresetTests)
     add_executable(OmniChoirStemMixerTests tests/stem_mixer_tests.cpp Source/Offline/ExternalStemMixer.cpp)
     target_compile_features(OmniChoirStemMixerTests PRIVATE cxx_std_17)
     add_test(NAME external_singer_stems COMMAND OmniChoirStemMixerTests)
@@ -89,10 +105,10 @@ if(OMNICHOIR_BUILD_TESTS)
                  COMMAND ${Python3_EXECUTABLE} -m unittest discover
                          -s ${CMAKE_CURRENT_SOURCE_DIR}/tests -p test_interop_tools.py)
     endif()
-    add_executable(OmniChoirCalibrateTrim tests/calibrate_trim.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/ChoirDSP.cpp)
+    add_executable(OmniChoirCalibrateTrim tests/calibrate_trim.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
     target_compile_features(OmniChoirCalibrateTrim PRIVATE cxx_std_17)
     add_executable(OmniChoirFullTakeTests tests/fulltake_tests.cpp
-        Source/Offline/FullTakeScan.cpp Source/ChoirFX.cpp Source/ChoirDSP.cpp)
+        Source/Offline/FullTakeScan.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
     target_compile_features(OmniChoirFullTakeTests PRIVATE cxx_std_17)
     add_test(NAME complete_take_scan_and_score COMMAND OmniChoirFullTakeTests)
 endif()

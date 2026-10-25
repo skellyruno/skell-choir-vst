@@ -1,3 +1,4 @@
+#undef NDEBUG   // these tests use assert(); a Release build must still check
 #include "../Source/StagedChoir.h"
 #include <cassert>
 #include <chrono>

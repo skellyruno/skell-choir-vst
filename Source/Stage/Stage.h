@@ -1,6 +1,7 @@
 #pragma once
 // Port of ChoirStage, LeadStage and Hall (choir-stage.js): sources on a stage, mixed as the plugin mixes them.
 #include "Spatial.h"
+#include "Convolver.h"
 
 namespace oc {
 
@@ -307,17 +308,25 @@ private:
 };
 
 // ---------------------------------------------------------------- an extra hall under the choir
-// The plugin's late-field design (8-line FDN), longer and smoother. Fed only with the choir above 250 Hz (no mud),
-// through a 25 ms pre-delay, its top softened above 7 kHz.
+// The plugin's late-field design (8-line FDN), longer and smoother - or, when an impulse response is loaded, a real
+// room: a stereo partitioned convolution. Fed only with the choir above 250 Hz (no mud), through a 25 ms pre-delay
+// (the convolver's own latency counts towards it), its top softened above 7 kHz.
+struct ConvPair
+{
+    Convolver left, right;
+    ConvPair(const float* l, const float* r, int n, int partition) : left(l, n, partition), right(r, n, partition) {}
+};
+
 class Hall
 {
 public:
     Hall(double sampleRate, int blockSize) : sr(sampleRate), block(blockSize), late(sampleRate)
     {
         preLen = (int) std::lround(0.025 * sampleRate);
-        preL.assign((size_t) preLen, 0.f); preR = preL;
+        preSize = preLen + 2;
+        preL.assign((size_t) preSize, 0.f); preR = preL;
         for (int c = 0; c < 2; ++c) { f[c][0].setHighpass(250, 0.707, sr); f[c][1].setHighpass(250, 0.707, sr); f[c][2].setLowpass(7000, 0.707, sr); }
-        inL.assign((size_t) block, 0.f); inR = mL = mR = rL = rR = inL;
+        inL.assign((size_t) block, 0.f); inR = mL = mR = rL = rR = cinL = cinR = coutL = coutR = inL;
     }
     void set(double seconds, double g)
     {
@@ -329,27 +338,58 @@ public:
         }
         gain = g;
     }
-    // adds the hall of inL / inR (the choir) to outL / outR; in and out may be the same arrays
+    // audio thread: swap in a convolution (or nullptr to go back to the algorithmic hall); returns what it replaces,
+    // which the caller must not destroy on the audio thread
+    std::unique_ptr<ConvPair> adoptConvolver(std::unique_ptr<ConvPair> c)
+    {
+        std::swap(conv, c);
+        if (conv) { conv->left.reset(); conv->right.reset(); }
+        return c;
+    }
+    bool usesConvolver() const { return conv != nullptr; }
+    void reset()
+    {
+        late.reset(); std::fill(preL.begin(), preL.end(), 0.f); std::fill(preR.begin(), preR.end(), 0.f); prePos = 0;
+        for (auto& row : f) for (auto& q : row) q.z1 = q.z2 = 0;
+        if (conv) { conv->left.reset(); conv->right.reset(); }
+        gainNow = gain;
+    }
+    // adds the hall of l / r (the choir) to outL / outR; in and out may be the same arrays
     void process(const float* l, const float* r, float* outL, float* outR)
     {
         const int n = block;
+        const int convTap = conv ? std::max(0, preLen - conv->left.latency()) : preLen;
         for (int i = 0; i < n; ++i)
         {
             double a = f[0][2].process(f[0][1].process(f[0][0].process(l[i]))), b = f[1][2].process(f[1][1].process(f[1][0].process(r[i])));
-            inL[(size_t) i] = preL[(size_t) prePos]; inR[(size_t) i] = preR[(size_t) prePos];
             preL[(size_t) prePos] = (float) a; preR[(size_t) prePos] = (float) b;
-            if (++prePos >= preLen) prePos = 0;
+            int t = prePos - preLen; if (t < 0) t += preSize;
+            inL[(size_t) i] = preL[(size_t) t]; inR[(size_t) i] = preR[(size_t) t];
+            int u = prePos - convTap; if (u < 0) u += preSize;
+            cinL[(size_t) i] = preL[(size_t) u]; cinR[(size_t) i] = preR[(size_t) u];
+            if (++prePos >= preSize) prePos = 0;
         }
         for (auto& row : f) for (auto& q : row) q.flush();
-        late.process(inL.data(), inR.data(), mL.data(), mR.data(), rL.data(), rR.data(), n);
+        const double m0 = convMix, target = conv ? 1.0 : 0.0, m1 = m0 + clampv(target - m0, -(double) n / (.1 * sr), (double) n / (.1 * sr));
+        const bool needFdn = m0 < 1.0 || m1 < 1.0, needConv = conv && (m0 > 0.0 || m1 > 0.0);
+        if (needFdn) late.process(inL.data(), inR.data(), mL.data(), mR.data(), rL.data(), rR.data(), n);
+        if (needConv) { conv->left.process(cinL.data(), coutL.data(), n); conv->right.process(cinR.data(), coutR.data(), n); }
         double g0 = gainNow, g1 = gain, step = (g1 - g0) / n;
-        for (int i = 0; i < n; ++i) { double g = g0 + step * (i + 1); outL[i] += (float) (g * (mL[(size_t) i] + rL[(size_t) i])); outR[i] += (float) (g * (mR[(size_t) i] + rR[(size_t) i])); }
-        gainNow = g1;
+        for (int i = 0; i < n; ++i)
+        {
+            const double m = m0 + (m1 - m0) * (i + 1) / n, g = g0 + step * (i + 1);
+            double wl = 0, wr = 0;
+            if (needFdn) { wl += (1 - m) * (mL[(size_t) i] + rL[(size_t) i]); wr += (1 - m) * (mR[(size_t) i] + rR[(size_t) i]); }
+            if (needConv) { wl += m * coutL[(size_t) i]; wr += m * coutR[(size_t) i]; }
+            outL[i] += (float) (g * wl); outR[i] += (float) (g * wr);
+        }
+        convMix = m1; gainNow = g1;
     }
 private:
-    double sr; int block; LateReverb late; int preLen = 1, prePos = 0;
-    std::vector<float> preL, preR, inL, inR, mL, mR, rL, rR;
-    Biquad f[2][3]; double secs = 0, gain = 0, gainNow = 0;
+    double sr; int block; LateReverb late; int preLen = 1, preSize = 3, prePos = 0;
+    std::vector<float> preL, preR, inL, inR, mL, mR, rL, rR, cinL, cinR, coutL, coutR;
+    Biquad f[2][3]; double secs = 0, gain = 0, gainNow = 0, convMix = 0;
+    std::unique_ptr<ConvPair> conv;
 };
 
 } // namespace oc

@@ -1,3 +1,4 @@
+#undef NDEBUG   // these tests use assert(); a Release build must still check
 // Regression tests for the YIN pitch tracker and the full-take scanner, scored against synthetic ground truth.
 #include "../Source/ChoirFX.h"
 #include "../Source/Offline/FullTakeScan.h"

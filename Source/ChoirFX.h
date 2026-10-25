@@ -1,5 +1,6 @@
 #pragma once
 #include "ChoirDSP.h"
+#include "FormantChoir.h"
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -19,6 +20,13 @@ struct FXParams : Params {
     float leadX = 0.f, leadY = 0.4f, leadGain = 1.f;
     float hall = 0.f;                // v0.6: extra hall under the choir (0 = off), 0..0.5
     float hallSeconds = 2.4f;        // its length
+    // v0.6 second voice engine (FormantChoir): synthesised singers that follow the lead
+    float voiceBlend = 0.f;          // 0 = the granular harmonizer only, 1 = the formant choir only
+    float choirVowel = 0.f;          // manual vowel 0..1 across A E I O U (distinct from the legacy Params::vowel)
+    float vowelFollow = 0.f;         // how much the lead's own vowel steers the choir
+    float choirBreath = .5f;         // breath at phrase starts and a little air through the tone (distinct from Params::breath)
+    float vibrato = .6f;             // vibrato depth of the synthesised singers
+    bool classicStage = false;       // A/B: the v0.5 simplified stage instead of the faithful one
 };
 
 class PitchTracker {
@@ -110,6 +118,8 @@ private:
     void updateLPC();
     Room room;
     PitchTracker tracker;
+    FormantChoir formant;
+    float blendNow = 0.f;
     FXParams p;
     float sr = 48000.f, inputEnv = 0, outputEnv = 0, wetNow = 0;
     float window = 3072, minDelay = 480, roomL = 0, roomR = 0;

@@ -179,6 +179,7 @@ void ChoirEffect::prepare(double sampleRate) {
     excitationHistory.assign(inputHistory.size(),0.f);
     room.prepare(sr);
     tracker.prepare(sr);
+    formant.prepare(sr);
     reset();
 }
 void ChoirEffect::reset() {
@@ -193,7 +194,7 @@ void ChoirEffect::reset() {
     singerLevelGain.fill(1.f);singerDelaySeconds.fill(0.f);
     for(int i=0;i<sections*singers;++i)
         singerSeeds[(size_t)i]=0xB5297A4Du + 1013904223u*(uint32_t)(i+1);
-    tracker.reset(); room.reset();
+    tracker.reset(); room.reset(); formant.reset(); blendNow=0;
     if (status==1) status=0;
     updateTargetRatios();
 }
@@ -373,6 +374,20 @@ void ChoirEffect::processVoices(float mono,float* voicesOut) {
     }
     formantWrite=(formantWrite+1)%lpcOrder;
     if (++write >= (int)inputHistory.size()) write=0;
+    // Second voice engine: synthesised singers on the same pitch, voicing and gate, crossfaded with the harmonizer.
+    // It only runs while it is audible (its filters cost about as much as the granular layers).
+    const float blendTarget=bound(p.voiceBlend,0.f,1.f);
+    blendNow+=.002f*(blendTarget-blendNow);
+    if (blendNow>.001f || blendTarget>0.f) {
+        std::array<float,numVoices> ratios {}, synth {};
+        for (int k=0;k<numVoices;++k) ratios[(size_t)k]=layers[(size_t)k].ratio;
+        FormantControl fc;
+        fc.midi=tracker.midi(); fc.ratios=ratios.data(); fc.gate=outputEnv;
+        fc.humanize=p.humanize; fc.vibrato=p.vibrato; fc.breath=p.choirBreath; fc.vowel=p.choirVowel; fc.follow=p.vowelFollow;
+        formant.process(mono,fc,synth.data());
+        for (int k=0;k<numVoices;++k)
+            voicesOut[k]=(1.f-blendNow)*voicesOut[k]+blendNow*synth[(size_t)k]*singerLevelGain[(size_t)k];
+    }
 }
 void ChoirEffect::render(float inL,float inR,float& outL,float& outR) {
     const float mono=.5f*(inL+inR);

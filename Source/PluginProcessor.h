@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "StagedChoir.h"
+#include "StagePresets.h"
 #include <atomic>
 
 // Stereo/mono insert AUDIO EFFECT. No MIDI notes or pre-rendered choir samples.
@@ -33,6 +34,13 @@ public:
     float trackedMidi() const { return visiblePitch.load(std::memory_order_relaxed); }
     float inputLevel() const { return visibleRms.load(std::memory_order_relaxed); }
     choir::FXParams snapshotParams() const {return readParams();}
+    // v0.6 additions (message thread unless noted)
+    const choir::StagedChoir::Meters& meters() const { return staged.meters; }   // any thread
+    void loadImpulseResponse(const juce::File&);    // a WAV/AIFF/FLAC room recording for the HALL (up to 8 s)
+    void clearImpulseResponse();
+    bool hasImpulseResponse() const { return staged.hasImpulseResponse(); }
+    juce::String impulseResponseName() const { return irName; }
+    void applyStagePreset(int index);               // placement + room only; never harmony, mix, lead level or output
     juce::AudioProcessorValueTreeState parameters;
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 private:
@@ -47,7 +55,9 @@ private:
         std::atomic<float>* roomSize=nullptr,*roomSeconds=nullptr,*absorption=nullptr,*diffusion=nullptr;
         std::atomic<float>* wet=nullptr,*mix=nullptr,*master=nullptr;
         std::atomic<float>* leadX=nullptr,*leadY=nullptr,*leadGain=nullptr,*humanize=nullptr,*formant=nullptr,*hall=nullptr,*hallSeconds=nullptr;
+        std::atomic<float>* voiceBlend=nullptr,*choirVowel=nullptr,*vowelFollow=nullptr,*choirBreath=nullptr,*vibrato=nullptr,*classicStage=nullptr;
     } raw;
     choir::FXParams readParams() const;
+    juce::String irPath, irName;   // message thread only
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OmniChoirAudioProcessor)
 };

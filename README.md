@@ -10,6 +10,8 @@ follow, a movable lead and an extra hall, with a 128-sample reported latency. Th
 same engine. See **`docs/V0_6_CHANGELOG.md`** (including the parameter behaviour changes) - and note the JUCE layer is
 still uncompiled; the native tests (`ctest`, `-DOMNICHOIR_NATIVE_ONLY=ON`) all pass.
 
+**Round 3** adds a second (synthesised) voice engine with vowels, per-section stem outputs, stage presets, an impulse-response hall, meters and a faithful/classic A/B. The new SINGERS tab and the toolbar above the stage hold the controls.
+
 ## v0.5 — direct GUI stem/MIDI workflow and a real DSP fix
 
 This iteration makes the external-singer route available in the native plugin source (not only the Python CLI): `SCAN / EDIT` has `EXPORT MIDI` for five tempo-aligned SATB+lead tracks, and the fifth `STEMS` tab loads an external singer JSON manifest and renders a spatial stereo WAV in a background worker. The lead, group and mic stage positions also affect this external stem mix. The mixer is a separate JUCE-free C++17 component with executable tests, intentionally not an unlicensed copy of the supplied JavaScript renderer. **Important:** `leadX/leadY/leadGain/humanize/formant` were not being passed from APVTS to DSP in v0.4; this is fixed.
@@ -75,7 +77,7 @@ The plugin is an **audio effect**, not an instrument. It can be placed on a voca
 
 ```
 g++ -O2 -std=c++17 tools/omnichoir-batch.cpp \
-  Source/Offline/FullTakeScan.cpp Source/ChoirFX.cpp Source/ChoirDSP.cpp \
+  Source/Offline/FullTakeScan.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp \
   -o omnichoir-batch
 
 ./omnichoir-batch scan vocal.wav score.csv
@@ -90,8 +92,8 @@ The portable CLI is intentionally limited to **little-endian mono/stereo PCM16 o
 **Successfully tested natively (no JUCE):**
 
 ```
-g++ -O2 -std=c++17 tests/fx_tests.cpp Source/ChoirFX.cpp Source/ChoirDSP.cpp -o fx_tests && ./fx_tests
-g++ -O2 -std=c++17 tests/fulltake_tests.cpp Source/Offline/FullTakeScan.cpp Source/ChoirFX.cpp Source/ChoirDSP.cpp -o fulltake_tests && ./fulltake_tests
+g++ -O2 -std=c++17 tests/fx_tests.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp -o fx_tests && ./fx_tests
+g++ -O2 -std=c++17 tests/fulltake_tests.cpp Source/Offline/FullTakeScan.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp -o fulltake_tests && ./fulltake_tests
 ```
 
 These verify silence numerical safety, pitch detection, stage stereo movement, 44.1/48/96-kHz processing, 4-second scan behavior, full-note score segmentation, SATB editing and finite export-DSP samples. The included CLI was also used to scan a 10-second example into 12 detected notes and render the resulting full-length stereo WAV in `Preview/`.

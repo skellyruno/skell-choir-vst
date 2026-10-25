@@ -1,3 +1,4 @@
+#undef NDEBUG   // these tests use assert(); a Release build must still check
 #include "../Source/Offline/ExternalStemMixer.h"
 #include <cassert>
 #include <cmath>

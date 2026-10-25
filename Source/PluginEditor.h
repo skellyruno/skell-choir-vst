@@ -30,6 +30,16 @@ private:
     void timerCallback() override {repaint();}
 };
 
+// Live level strip: the four sections, the lead, the output peaks, and the stereo width/correlation.
+class MeterStrip final : public juce::Component,private juce::Timer {
+public:
+    explicit MeterStrip(OmniChoirAudioProcessor&);
+    void paint(juce::Graphics&) override;
+private:
+    OmniChoirAudioProcessor& processor;
+    void timerCallback() override {repaint();}
+};
+
 class OmniChoirAudioProcessorEditor final : public juce::AudioProcessorEditor,
                                            private juce::Timer,
                                            private juce::ListBoxModel {
@@ -41,11 +51,15 @@ public:
 private:
     OmniChoirAudioProcessor& processor;
     StageView stage;
+    MeterStrip meterStrip;
     TakeWorker take;
     juce::TextButton scanButton {"SCAN LIVE INPUT"}, choirButton {"CHOIR ON"};
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> choirAttachment;
     juce::Label scanStatus;
-    std::array<juce::TextButton,5> tabs;
+    juce::ComboBox presetBox;
+    juce::TextButton abButton {"STAGE: FAITHFUL"},irButton {"LOAD IR"},irClearButton {"X"};
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> abAttachment;
+    std::array<juce::TextButton,6> tabs;
     struct PageControl {int page;std::unique_ptr<juce::Component> item;};
     std::vector<PageControl> controls;
     int currentTab=0;
@@ -64,6 +78,7 @@ private:
     choir::FullTakeScore visibleScore;
     int lastTakeStatus=-100;
     void chooseInput();
+    void chooseImpulseResponse();
     void chooseOutput();
     void chooseMidi();
     void chooseStemManifest();

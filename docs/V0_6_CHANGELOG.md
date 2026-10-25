@@ -45,7 +45,7 @@ Saved v0.5 sessions load (same parameter IDs); their sound changes as described.
 
 ## Verification
 
-Native (no JUCE), all passing: DSP, FX (render() unchanged), full-take scan, stem mixer, Python interop, tracker/scanner accuracy, and
+Native (no JUCE), all passing: DSP, FX (render() unchanged), full-take scan, stem mixer, Python interop, tracker/scanner accuracy, formant choir, convolver, presets, feature chain, and
 `staged_tests` (silence at 44.1/48/96 kHz; dry lead sample-exact with 128-sample latency; level within 1.5 dB of v0.5;
 all six mic arrays bounded; section placement moves the stereo image; **bit-identical output for host buffers of 1, 37,
 128, 513, 4096**; automation sweep; CPU). `staged_tests` is clean under AddressSanitizer + UBSan. End-to-end CLI:
@@ -92,6 +92,78 @@ rather than a promise. Try it on your own takes with `omnichoir-batch scan`.
 steady noise through the 16 voices, 93 % of the >4 kHz energy share is retained and amplitude flutter is only 4 %
 (the sum of 16 incoherent voices smooths it). With no measured problem, I added nothing. Worth revisiting only if
 your ears disagree on real "s" and "sh" sounds, since synthetic noise is not a real consonant.
+
+## Round 3 - eight new features (voice engine, vowels, performance, stems, presets, impulse responses, meters, A/B)
+
+Everything below is covered by native tests (`formant_choir_voice_engine`, `impulse_response_convolver`,
+`stems_meters_ab_ir_formant_chain`, `stage_presets`) except the JUCE glue, which is **not compiled here** (see the end).
+
+### A second voice engine: the formant choir (`Source/FormantChoir.*`)
+Synthesised singers instead of re-played copies of the lead: a band-limited glottal-style source through five vowel
+formants, with separate tables for soprano, alto, tenor and bass. It follows the lead's pitch, loudness and phrasing, and
+uses the harmonizer's own voicing, so harmony, scan mode and score voicing all still apply. **SINGERS** tab: VOICE BLEND
+crossfades from the granular harmonizer (0) to the synthesised choir (1); default 0 so existing sounds are unchanged.
+Measured: every voice sings the right pitch (220.0 / 330.0 / 110.0 Hz for unison / fifth up / octave down), tracks a
+12 dB diminuendo to 0.0 dB, sits at the lead's own level (ratio 1.00), runs at ~9x realtime.
+It is *synthesis*: it can sound like a choir pad with real vowels, not like 16 recorded humans. That would need
+recorded samples or a trained model behind `ChoirEffect::processVoices()`.
+
+### Vowels that follow the lead
+VOWEL sets a vowel by hand (A E I O U); FOLLOW LEAD lets the lead's own mouth shape steer the choir (an LPC formant
+estimator, F1/F2 mapped onto the five vowels). Measured on synthesised vowels: 7 of 8 recognised; the miss is a high-pitched
+"i" read as "e", an expected limit when the harmonics are sparse. It follows the vowel *colour*; it does not read lyrics.
+
+### Performance layer
+Per-singer vibrato that blooms after the note starts, a scoop up into each new note, pitch jitter, staggered entries
+(26-77 ms spread measured), a breath at the start of phrases (BREATH) that settles, and swells that follow the lead's dynamics.
+
+### Impulse-response hall
+`LOAD IR` on the toolbar loads a WAV/AIFF/FLAC room recording (up to 8 s, mono or stereo, any sample rate - resampled
+with a cubic interpolator that places a 10 ms click at exactly 10.000 ms). HALL sets how much you hear; `X` returns to the
+algorithmic hall. The partitioned-FFT convolver matches brute-force convolution to ~1e-5, costs about 3% of a core for a 6 s
+stereo IR, is loudness-matched to the algorithmic hall (+0.01 dB on noise) and swaps click-free (0.056 largest step) while
+audio runs. The IR path is stored in the session and reloaded. **No IRs are bundled** (no network here, and recordings carry licences).
+
+### Stems (multi-output)
+Five optional stereo output buses, off until the host enables them: Sopranos, Altos, Tenors, Basses, Lead. Each section
+stem is that section heard alone through the same stage (sopranos-only test: other stems are exactly silent; the main output
+is bit-identical with or without stems requested). The four stems do not sum exactly to the main mix, whose spot microphones
+and top-end shelf act on all sections together. Stems cost extra CPU only while their buses are enabled. Host support for
+optional output buses varies; test in your DAW.
+
+### Stage presets
+Cathedral, Concert Hall, Studio Booth, Chapel, Gospel Stage, Stadium Anthem, Headphone Choir (and Default). They set
+placement and room only (sections, microphone, room, hall, ensemble, human variation) and never touch harmony, mix, lead
+level or output. Measured: levels within 5 dB of each other, and the tails really differ (Cathedral and Stadium ring ~200x
+longer than Studio Booth).
+
+### Meters and A/B
+A strip on the toolbar shows the four sections, the lead, output peaks, stereo WIDTH and CORRelation; the stage view's
+sections glow with their live level. **STAGE: FAITHFUL / CLASSIC v0.5** is a true A/B: the classic engine is bit-identical to
+v0.5's `ChoirEffect::render` (max difference 0.00e+00 over 4 s) and delayed to the same latency, so switching never shifts
+timing and leaves no stale audio behind.
+
+### Bugs found and fixed while building this
+- Section meters first read the singers *before* the section level control, so a muted section still showed full level.
+- Breath noise was inaudible by design error (it went through five narrow resonators, which pass almost none of a
+  broadband signal); it now has its own wide-band, vowel-shaped path.
+- New `FXParams` fields were hiding legacy `Params::breath` / `Params::vowel`; renamed (`choirBreath`, `choirVowel`).
+- Every test file (including the original ones) used `assert`, which a Release build compiles to nothing; each now begins
+  with `#undef NDEBUG`.
+
+### The editor
+The existing stage view (robed singers, cathedral art, drag sections / lead / microphone) is kept, and gains live glow.
+New toolbar: STAGE PRESET menu, A/B button, LOAD IR / clear, meter strip. New tab: SINGERS (voice blend, vowel, follow lead,
+breath, vibrato); the ROOM tab gains HALL and HALL TIME.
+
+### Not verified
+- **The JUCE layer has not been compiled here.** Round 3 touches `PluginProcessor.*` (new parameters, optional output buses,
+  IR load/clear, presets) and `PluginEditor.*` (toolbar, meter strip, SINGERS tab). I read the diff line by line and used
+  every anchor with an assertion, but only a real build proves it. The native emulation of CI (every `add_executable` in
+  `CMakeLists.txt` built with `-O3 -DNDEBUG -Wall -Wextra -Wshadow` and all registered tests run) is clean.
+- Nothing here has been listened to. Levels were calibrated numerically; whether the formant choir *sounds* good, and
+  how the presets feel, is for your ears.
+- Optional stem buses and the IR loader need testing in your host (REAPER, Ableton, Cubase, Logic, Pro Tools differ).
 
 ## Not verified / still open
 

@@ -14,7 +14,13 @@ void addFloat(juce::AudioProcessorValueTreeState::ParameterLayout& layout,
 OmniChoirAudioProcessor::OmniChoirAudioProcessor()
     : AudioProcessor(BusesProperties()
                      .withInput("Audio Input",juce::AudioChannelSet::stereo(),true)
-                     .withOutput("Audio Output",juce::AudioChannelSet::stereo(),true)),
+                     .withOutput("Audio Output",juce::AudioChannelSet::stereo(),true)
+                     // optional stem outputs, off until the host enables them (one stereo bus per section, plus the placed lead)
+                     .withOutput("Sopranos",juce::AudioChannelSet::stereo(),false)
+                     .withOutput("Altos",juce::AudioChannelSet::stereo(),false)
+                     .withOutput("Tenors",juce::AudioChannelSet::stereo(),false)
+                     .withOutput("Basses",juce::AudioChannelSet::stereo(),false)
+                     .withOutput("Lead",juce::AudioChannelSet::stereo(),false)),
       parameters(*this,nullptr,"OMNICHOIR_FX_PARAMETERS",createLayout()) {
     for (int i=0;i<4;++i) {
         const auto s=juce::String(i);
@@ -30,6 +36,8 @@ OmniChoirAudioProcessor::OmniChoirAudioProcessor()
     raw.leadX=get("leadX");raw.leadY=get("leadY");raw.leadGain=get("leadGain");
     raw.humanize=get("humanize");raw.formant=get("formant");
     raw.hall=get("hall");raw.hallSeconds=get("hallSeconds");
+    raw.voiceBlend=get("voiceBlend");raw.choirVowel=get("choirVowel");raw.vowelFollow=get("vowelFollow");
+    raw.choirBreath=get("choirBreath");raw.vibrato=get("vibrato");raw.classicStage=get("classicStage");
 }
 juce::AudioProcessorValueTreeState::ParameterLayout OmniChoirAudioProcessor::createLayout() {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
@@ -65,6 +73,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout OmniChoirAudioProcessor::cre
     addFloat(layout,"wet","Room Return",0.f,1.5f,.001f,.37f);
     addFloat(layout,"hall","Hall",0.f,.5f,.001f,0.f);
     addFloat(layout,"hallSeconds","Hall Time",.5f,8.f,.01f,2.4f,"s");
+    addFloat(layout,"voiceBlend","Choir Voice",0.f,1.f,.001f,0.f);
+    addFloat(layout,"choirVowel","Vowel",0.f,1.f,.001f,0.f);
+    addFloat(layout,"vowelFollow","Vowel Follows Lead",0.f,1.f,.001f,0.f);
+    addFloat(layout,"choirBreath","Breath",0.f,1.f,.001f,.5f);
+    addFloat(layout,"vibrato","Vibrato",0.f,1.f,.001f,.6f);
+    layout.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"classicStage",1},"Classic v0.5 Stage (A/B)",false));
     addFloat(layout,"mix","Choir Mix",0.f,1.f,.001f,.78f);
     addFloat(layout,"master","Output",0.f,1.5f,.001f,.9f);
     return layout;
@@ -78,6 +92,10 @@ void OmniChoirAudioProcessor::prepareToPlay(double sampleRate,int) {
 void OmniChoirAudioProcessor::releaseResources() { staged.reset(); }
 bool OmniChoirAudioProcessor::isBusesLayoutSupported(const BusesLayout& layout) const {
     const auto in=layout.getMainInputChannelSet(),out=layout.getMainOutputChannelSet();
+    for(int i=1;i<layout.outputBuses.size();++i) {   // stem buses: off, or stereo
+        const auto stem=layout.outputBuses[i];
+        if(!stem.isDisabled() && stem!=juce::AudioChannelSet::stereo()) return false;
+    }
     return (in==juce::AudioChannelSet::mono() || in==juce::AudioChannelSet::stereo())
         && (out==juce::AudioChannelSet::stereo() || (out==juce::AudioChannelSet::mono() && in==juce::AudioChannelSet::mono()));
 }
@@ -93,6 +111,8 @@ choir::FXParams OmniChoirAudioProcessor::readParams() const {
     p.leadX=read(raw.leadX);p.leadY=read(raw.leadY);p.leadGain=read(raw.leadGain);
     p.humanize=read(raw.humanize);p.formant=read(raw.formant);
     p.hall=read(raw.hall);p.hallSeconds=read(raw.hallSeconds);
+    p.voiceBlend=read(raw.voiceBlend);p.choirVowel=read(raw.choirVowel);p.vowelFollow=read(raw.vowelFollow);
+    p.choirBreath=read(raw.choirBreath);p.vibrato=read(raw.vibrato);p.classicStage=read(raw.classicStage)>.5f;
     return p;
 }
 void OmniChoirAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiBuffer& midi) {
@@ -102,14 +122,28 @@ void OmniChoirAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce
         staged.voices().setSavedScanRoot(savedRoot.load(),visibleStatus.load()==2);
     if(scanRequested.exchange(false,std::memory_order_acq_rel)) staged.voices().beginScan();
     staged.setParameters(readParams());
-    const int n=buffer.getNumSamples(),inputs=getTotalNumInputChannels(),outputs=getTotalNumOutputChannels();
+    const int n=buffer.getNumSamples(),inputs=getMainBusNumInputChannels(),outputs=getMainBusNumOutputChannels();
     if(outputs==0 || inputs==0) {buffer.clear();return;}
-    auto* l=buffer.getWritePointer(0);
-    auto* r=outputs>1?buffer.getWritePointer(1):nullptr;
+    auto mainOut=getBusBuffer(buffer,false,0);
+    auto* l=mainOut.getWritePointer(0);
+    auto* r=outputs>1?mainOut.getWritePointer(1):nullptr;
+    // Optional stem buses: only those the host has switched on are rendered.
+    choir::StagedChoir::StemOut stems[choir::StagedChoir::numStems];
+    bool anyStem=false;
+    for(int s=0;s<choir::StagedChoir::numStems;++s) {
+        const int busIndex=s+1;
+        if(busIndex>=getBusCount(false)) break;
+        auto* bus=getBus(false,busIndex);
+        if(bus==nullptr || !bus->isEnabled()) continue;
+        auto stemBuffer=getBusBuffer(buffer,false,busIndex);
+        if(stemBuffer.getNumChannels()<2) {stemBuffer.clear();continue;}
+        stems[s].left=stemBuffer.getWritePointer(0);
+        stems[s].right=stemBuffer.getWritePointer(1);
+        anyStem=true;
+    }
     // In place: the stage reads each input sample before it writes that output sample. Mono in -> the left channel
     // feeds both sides of the lead path.
-    staged.process(l,(inputs>1 && r!=nullptr)?r:nullptr,l,r,n);
-    for(int c=outputs;c<buffer.getNumChannels();++c)buffer.clear(c,0,n);
+    staged.process(l,(inputs>1 && r!=nullptr)?r:nullptr,l,r,n,anyStem?stems:nullptr);
     auto& effect=staged.voices();
     visibleStatus.store(effect.scanStatus(),std::memory_order_relaxed);
     visibleProgress.store(effect.scanProgress(),std::memory_order_relaxed);
@@ -122,6 +156,7 @@ void OmniChoirAudioProcessor::getStateInformation(juce::MemoryBlock& dest) {
     if(auto xml=parameters.copyState().createXml()) {
         xml->setAttribute("scanPitchClass",savedRoot.load());
         xml->setAttribute("scanWasReady",visibleStatus.load()==2);
+        xml->setAttribute("irPath",irPath);
         copyXmlToBinary(*xml,dest);
     }
 }
@@ -132,7 +167,45 @@ void OmniChoirAudioProcessor::setStateInformation(const void* data,int size) {
             savedRoot.store(juce::jlimit(0,11,xml->getIntAttribute("scanPitchClass",0)));
             visibleStatus.store(xml->getBoolAttribute("scanWasReady",false)?2:0);
             restoreRequested.store(true,std::memory_order_release);
+            const auto path=xml->getStringAttribute("irPath");
+            if(path.isNotEmpty() && juce::File(path).existsAsFile()) loadImpulseResponse(juce::File(path));
+            else if(path.isEmpty()) clearImpulseResponse();
         }
     }
+}
+void OmniChoirAudioProcessor::loadImpulseResponse(const juce::File& file) {
+    juce::AudioFormatManager formats;formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
+    if(reader==nullptr || reader->lengthInSamples<=0 || reader->sampleRate<=0) return;
+    const int length=(int)std::min<juce::int64>(reader->lengthInSamples,(juce::int64)(oc::Convolver::kMaxSeconds*reader->sampleRate));
+    const int channels=(int)std::min<unsigned int>(2u,reader->numChannels);
+    juce::AudioBuffer<float> data(channels,length);
+    if(!reader->read(&data,0,length,0,true,channels>1)) return;
+    staged.setImpulseResponse(data.getReadPointer(0),channels>1?data.getReadPointer(1):nullptr,length,reader->sampleRate);
+    irPath=file.getFullPathName();irName=file.getFileName();
+}
+void OmniChoirAudioProcessor::clearImpulseResponse() {
+    staged.setImpulseResponse(nullptr,nullptr,0,48000.0);
+    irPath.clear();irName.clear();
+}
+void OmniChoirAudioProcessor::applyStagePreset(int index) {
+    if(index<0 || index>=choir::kNumStagePresets) return;
+    const auto& s=choir::kStagePresets[index];
+    const auto set=[this](const juce::String& id,float value) {
+        if(auto* parameter=parameters.getParameter(id)) {
+            parameter->beginChangeGesture();
+            parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
+            parameter->endChangeGesture();
+        }
+    };
+    for(int i=0;i<4;++i) {
+        const auto k=juce::String(i);
+        set("x"+k,s.x[i]);set("y"+k,s.y[i]);set("gain"+k,s.gain[i]);
+    }
+    set("micX",s.micX);set("micY",s.micY);set("width",s.width);set("micMode",(float)s.micMode);
+    set("roomSize",s.roomSize);set("roomSeconds",s.roomSeconds);set("absorption",s.absorption);
+    set("diffusion",s.diffusion);set("wet",s.wet);set("hall",s.hall);set("hallSeconds",s.hallSeconds);
+    set("ensemble",s.ensemble);set("humanize",s.humanize);
+    // the lead keeps standing where the user put it relative to the new microphone position
 }
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {return new OmniChoirAudioProcessor();}
