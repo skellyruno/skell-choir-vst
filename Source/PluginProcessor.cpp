@@ -2,6 +2,11 @@
 #include "PluginEditor.h"
 
 namespace {
+// Saved-state version. Absent = 1 (v0.4 to v0.6.0). 2 = v0.6.1: CHOIR LEVEL exists and the faithful choir carries a +12 dB make-up.
+constexpr int kStateVersion=2;
+// A session saved before version 2 was balanced against the quieter choir. To keep it sounding the way it did, it loads with CHOIR LEVEL
+// at this value (the dial then shows why). Set it to 0 to give old sessions the new, louder default instead.
+constexpr float kLegacyChoirLevelDb=-12.f;
 void addFloat(juce::AudioProcessorValueTreeState::ParameterLayout& layout,
               const juce::String& id, const juce::String& name,
               float min, float max, float step, float value, const juce::String& unit = {}) {
@@ -38,6 +43,7 @@ OmniChoirAudioProcessor::OmniChoirAudioProcessor()
     raw.hall=get("hall");raw.hallSeconds=get("hallSeconds");
     raw.voiceBlend=get("voiceBlend");raw.choirVowel=get("choirVowel");raw.vowelFollow=get("vowelFollow");
     raw.choirBreath=get("choirBreath");raw.vibrato=get("vibrato");raw.classicStage=get("classicStage");
+    raw.choirLevel=get("choirLevel");
 }
 juce::AudioProcessorValueTreeState::ParameterLayout OmniChoirAudioProcessor::createLayout() {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
@@ -80,7 +86,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout OmniChoirAudioProcessor::cre
     addFloat(layout,"vibrato","Vibrato",0.f,1.f,.001f,.6f);
     layout.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"classicStage",1},"Classic v0.5 Stage (A/B)",false));
     addFloat(layout,"mix","Choir Mix",0.f,1.f,.001f,.78f);
-    addFloat(layout,"master","Output",0.f,1.5f,.001f,.9f);
+    addFloat(layout,"master","Output",0.f,1.5f,.001f,1.2f);   // v0.6.1: default 0.9 -> 1.2 (new instances only; saved sessions keep their value). The range is unchanged so host automation keeps its meaning.
+    addFloat(layout,"choirLevel","Choir Level",-12.f,12.f,.1f,0.f,"dB");   // v0.6.1: the choir against the lead, faithful stage only
     return layout;
 }
 void OmniChoirAudioProcessor::prepareToPlay(double sampleRate,int) {
@@ -113,6 +120,7 @@ choir::FXParams OmniChoirAudioProcessor::readParams() const {
     p.hall=read(raw.hall);p.hallSeconds=read(raw.hallSeconds);
     p.voiceBlend=read(raw.voiceBlend);p.choirVowel=read(raw.choirVowel);p.vowelFollow=read(raw.vowelFollow);
     p.choirBreath=read(raw.choirBreath);p.vibrato=read(raw.vibrato);p.classicStage=read(raw.classicStage)>.5f;
+    p.choirLevelDb=read(raw.choirLevel);
     return p;
 }
 void OmniChoirAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiBuffer& midi) {
@@ -157,6 +165,7 @@ void OmniChoirAudioProcessor::getStateInformation(juce::MemoryBlock& dest) {
         xml->setAttribute("scanPitchClass",savedRoot.load());
         xml->setAttribute("scanWasReady",visibleStatus.load()==2);
         xml->setAttribute("irPath",irPath);
+        xml->setAttribute("omniStateVersion",kStateVersion);
         copyXmlToBinary(*xml,dest);
     }
 }
@@ -164,6 +173,8 @@ void OmniChoirAudioProcessor::setStateInformation(const void* data,int size) {
     if(auto xml=getXmlFromBinary(data,size)) {
         if(xml->hasTagName(parameters.state.getType())) {
             parameters.replaceState(juce::ValueTree::fromXml(*xml));
+            if(xml->getIntAttribute("omniStateVersion",1)<2)   // saved by v0.6.0 or earlier: keep its sound
+                if(auto* level=parameters.getParameter("choirLevel")) level->setValueNotifyingHost(level->convertTo0to1(kLegacyChoirLevelDb));
             savedRoot.store(juce::jlimit(0,11,xml->getIntAttribute("scanPitchClass",0)));
             visibleStatus.store(xml->getBoolAttribute("scanWasReady",false)?2:0);
             restoreRequested.store(true,std::memory_order_release);

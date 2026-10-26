@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(OmniChoirFX VERSION 0.6.0 LANGUAGES C CXX)
+project(OmniChoirFX VERSION 0.6.1 LANGUAGES C CXX)
 
 option(OMNICHOIR_NATIVE_ONLY "Build JUCE-free tests without fetching JUCE" OFF)
 option(OMNICHOIR_BUILD_TESTS "Build JUCE-free native DSP tests" ${OMNICHOIR_NATIVE_ONLY})
@@ -105,6 +105,12 @@ if(OMNICHOIR_BUILD_TESTS)
                  COMMAND ${Python3_EXECUTABLE} -m unittest discover
                          -s ${CMAKE_CURRENT_SOURCE_DIR}/tests -p test_interop_tools.py)
     endif()
+    add_executable(OmniChoirBalanceTests tests/balance_tests.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
+    target_compile_features(OmniChoirBalanceTests PRIVATE cxx_std_17)
+    add_test(NAME level_and_balance_goals COMMAND OmniChoirBalanceTests ${CMAKE_CURRENT_SOURCE_DIR})
+    add_executable(OmniChoirRealVocalTests tests/real_vocal_tests.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
+    target_compile_features(OmniChoirRealVocalTests PRIVATE cxx_std_17)
+    add_test(NAME real_vocal_tracker_and_balance COMMAND OmniChoirRealVocalTests ${CMAKE_CURRENT_SOURCE_DIR}/tests/data)
     add_executable(OmniChoirCalibrateTrim tests/calibrate_trim.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
     target_compile_features(OmniChoirCalibrateTrim PRIVATE cxx_std_17)
     add_executable(OmniChoirFullTakeTests tests/fulltake_tests.cpp

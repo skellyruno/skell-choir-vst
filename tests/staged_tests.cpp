@@ -52,13 +52,13 @@ int main()
         for (size_t i = 0; i < o.l.size(); ++i) if ((int) i != 1000 + L && (int) i != 1001 + L) assert(std::fabs(o.l[i]) < 1e-4);
         std::printf("[2] dry lead exact, latency = %d samples\n", L);
     }
-    // 3. level: the choir matches v0.5's loudness within 1.5 dB
+    // 3. level: the choir sits kChoirMakeupDb above v0.5's loudness (the deliberate make-up gain), within 1.5 dB
     {
         const double sr = 48000; auto x = sung(sr, 9); auto p = base(); const size_t from = (size_t) (3 * sr);
         choir::ChoirEffect fx; fx.prepare(sr); fx.setParameters(p); double a = 0; for (size_t i = 0; i < x.size(); ++i) { float l, r; fx.render(x[i], x[i], l, r); if (i >= from) a += .5 * ((double) l * l + (double) r * r); }
         StagedChoir sc; sc.prepare(sr); sc.setParameters(p); auto o = run(sc, x); double b = 0; for (size_t i = from; i < x.size(); ++i) b += .5 * ((double) o.l[i] * o.l[i] + (double) o.r[i] * o.r[i]);
         double db = 20 * std::log10(std::sqrt(b / a));
-        std::printf("[3] choir level vs v0.5: %+.2f dB\n", db); assert(std::fabs(db) < 1.5);
+        db -= StagedChoir::kChoirMakeupDb; std::printf("[3] choir level vs v0.5 + make-up: %+.2f dB\n", db); assert(std::fabs(db) < 1.5);
     }
     // 4. bounded even when loud and over-driven; all six mic arrays work
     for (int mic = 0; mic < 6; ++mic)

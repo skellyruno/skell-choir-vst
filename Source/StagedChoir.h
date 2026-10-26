@@ -6,7 +6,7 @@
 //                                   image-source early reflections, 8-line FDN, spot-mic follow, top-end shelf
 //              --> oc::Hall         extra hall under the choir: algorithmic, or a loaded impulse response
 //   lead input --> oc::LeadStage    the lead, dry at home, heard where it stands once moved
-//   final      = ceiling( master * ( (1-mix) * lead * leadGain + mix * choir ) )
+//   final      = ceiling( master * ( (1-mix) * lead * leadGain + mix * choir ) )   (choir includes CHOIR LEVEL, -12..+12 dB)
 //
 // Extras: per-section stem outputs, meters, and an A/B switch to the v0.5 classic stage.
 //
@@ -28,7 +28,13 @@ public:
     // v0.5 parameter semantics are kept; these map them onto the stage.
     static constexpr float kSectionUnity = 0.83f;   // section gain that now means "0 dB" (the v0.5 default)
     static constexpr float kWetUnity = 0.37f;       // ROOM RETURN that now means "reverb 1.0" (the v0.5 default)
-    static constexpr float kVoiceTrim = 0.0466f;    // -26.6 dB: the stage is physically scaled; this puts the choir where v0.5 was (tests/calibrate_trim.cpp)
+    // The stage is physically scaled (6-9 m of distance), so the raw trim that matches v0.5's choir level is 0.0466 (-26.6 dB,
+    // tests/calibrate_trim.cpp). But v0.5's choir is ~24 dB under the input and ~11 dB under the dry lead at the default MIX,
+    // so it read as a solo voice with a faint halo. kChoirMakeupDb lifts the choir to sit level with the lead at the defaults.
+    static constexpr float kMatchV05Trim = 0.0466f;
+    static constexpr float kChoirMakeupDb = 12.f;
+    static constexpr float kVoiceTrim = kMatchV05Trim * 3.98107171f;   // = 0.0466 * 10^(12/20) = 0.1855 (-14.6 dB); keep in step with kChoirMakeupDb
+    static constexpr float kChoirLevelMaxDb = 12.f; // range of the CHOIR LEVEL control (FXParams::choirLevelDb), either way
     static constexpr float kIrEnergy = 1.18f;       // loaded impulse responses are scaled to this energy: the same loudness as the algorithmic hall on noise
     static constexpr int numStems = 5;              // sopranos, altos, tenors, basses, lead
 
@@ -69,6 +75,7 @@ public:
 
 private:
     void renderBlock();
+    float trimGoal() const;
     void applyTo(oc::ChoirStage& s, bool all, int onlySection);
     void adoptPendingImpulseResponse();
     void rebuildImpulseResponse();
@@ -93,6 +100,7 @@ private:
     float scratchL[block] {}, scratchR[block] {};
     int pos = 0;
     float wetNow = 0, leadGainNow = 1;
+    float trimNow = kVoiceTrim;                   // smoothed kVoiceTrim * CHOIR LEVEL, so turning the dial never zippers
     bool lastClassic = false, stemsWanted = false, lastStems = false;
     float corr = 1.f, wid = 0.f, peakL = 0.f, peakR = 0.f;
 

@@ -30,8 +30,8 @@ int main(int argc, char** argv)
     {   choir::StagedChoir sc; sc.prepare(sr); sc.setParameters(p);
         std::vector<float> l(x.size()), r(x.size()); sc.process(x.data(), x.data(), l.data(), r.data(), (int) x.size());
         for (size_t i = from; i < x.size(); ++i) newSq += 0.5 * ((double) l[i] * l[i] + (double) r[i] * r[i]); }
-    double oldRms = std::sqrt(oldSq / cnt), newRms = std::sqrt(newSq / cnt);
-    std::printf("choir-only RMS  v0.5 %.5f | v0.6 (trim %.3f) %.5f | trim to match: %.4f (%.1f dB)\n", oldRms, (double) choir::StagedChoir::kVoiceTrim, newRms,
-                oldRms / newRms * choir::StagedChoir::kVoiceTrim, 20 * std::log10(oldRms / newRms));
+    double oldRms = std::sqrt(oldSq / cnt), newRms = std::sqrt(newSq / cnt) / std::pow(10.0, choir::StagedChoir::kChoirMakeupDb / 20.0);
+    std::printf("choir-only RMS  v0.5 %.5f | v0.6 (trim %.3f) %.5f | trim to match: %.4f (%.1f dB)\n", oldRms, (double) choir::StagedChoir::kMatchV05Trim, newRms,
+                oldRms / newRms * choir::StagedChoir::kMatchV05Trim, 20 * std::log10(oldRms / newRms));
     (void) argc; (void) argv;
 }

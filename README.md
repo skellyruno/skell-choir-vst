@@ -1,8 +1,17 @@
-# OmniChoir FX 0.6 — live vocal choirification + full-take SATB scan + external singer tools
+# OmniChoir FX 0.6.1 — live vocal choirification + full-take SATB scan + external singer tools
 
 **VST3 effect source project — not a compiled plugin.** This is an upgrade of the OmniChoir FX starter using your original JS stage, worklet, renderer, latest `omnichoir-demo.js`, the five photographic references, and the screenshot of the larger GUI. The original JS files are kept verbatim in `Reference/` for continued native porting. The browser `AudioWorklet` itself cannot execute as a native VST3 audio callback; the relevant stage/mic/group interaction patterns and acoustic concepts are translated into C++.
 
-## v0.6 — the faithful stage (this release)
+## v0.6.1 — level fix, CHOIR LEVEL, and a real test suite (this release)
+
+At the default settings the choir was about 24 dB under the input and about 11 dB under your own dry voice, so it sounded like a solo
+voice with a faint halo. The faithful choir now carries a +12 dB make-up, a new **CHOIR LEVEL** dial (-12..+12 dB) sets it against the lead,
+and the default **OUTPUT** is 1.2. Saved sessions are versioned: a session saved by v0.6.0 or earlier loads with CHOIR LEVEL at -12 dB so it
+sounds exactly as it did (set the dial to 0 to hear the new level). New goal-based tests (`balance`, `real_vocal`) fail if the choir ever
+sinks below the lead again, and `scripts/run_tests.sh` runs everything with only a C++ compiler. CI now builds the VST3 on Windows, macOS
+and Linux and validates it with pluginval. Details, measurements and known limits: **`docs/V0_6_1_CHANGELOG.md`**.
+
+## v0.6 — the faithful stage
 
 Your JS stage is now a native C++ engine under `Source/Stage/`, and the 16 granular/LPC singers stand on it: real
 mic-array geometry, per-singer delay and air absorption, image-source early reflections, FDN late field, spot-mic
@@ -16,12 +25,10 @@ still uncompiled; the native tests (`ctest`, `-DOMNICHOIR_NATIVE_ONLY=ON`) all p
 
 This iteration makes the external-singer route available in the native plugin source (not only the Python CLI): `SCAN / EDIT` has `EXPORT MIDI` for five tempo-aligned SATB+lead tracks, and the fifth `STEMS` tab loads an external singer JSON manifest and renders a spatial stereo WAV in a background worker. The lead, group and mic stage positions also affect this external stem mix. The mixer is a separate JUCE-free C++17 component with executable tests, intentionally not an unlicensed copy of the supplied JavaScript renderer. **Important:** `leadX/leadY/leadGain/humanize/formant` were not being passed from APVTS to DSP in v0.4; this is fixed.
 
-For implementation and limits, see `docs/V0_5_CHANGELOG.md` and `docs/BUILD_TEST_V05.md`. For immediate tests **without JUCE or internet**, use:
+For implementation and limits, see `docs/V0_5_CHANGELOG.md` and `docs/BUILD_AND_TEST.md`. For immediate tests **without JUCE, CMake or internet**, use:
 
 ```bash
-cmake -S . -B build-native -DOMNICHOIR_NATIVE_ONLY=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build build-native --parallel
-ctest --test-dir build-native --output-on-failure
+scripts/run_tests.sh
 ```
 
 The additional UI features, MIDI exporter and JUCE glue are not host-tested until the VST3 is compiled. Full AI singer generation still requires licensed models or recorded multisinger stems. The original demo JS is retained in `Reference/`.
@@ -59,7 +66,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --parallel 2
 ```
 
-Or publish the **contents** of this folder at the root of your GitHub repository and use **Actions → Build OmniChoir FX VST3 → Run workflow** for Windows/macOS artifacts.
+Or publish the **contents** of this folder at the root of your GitHub repository and use **Actions → Build, test and validate OmniChoir FX → Run workflow** for Windows, macOS and Linux artifacts (the workflow also runs the tests and pluginval).
 
 The plugin is an **audio effect**, not an instrument. It can be placed on a vocal track in REAPER, Ableton, FL Studio, Cubase, etc. **VST3 does not run in Logic Pro; AU support would need to be added.** The JUCE plugin **has not been compiled or host-tested in this sandbox** because this environment cannot reach the JUCE source repository. Source-level validation and native DSP tests are separate from actual VST3 host validation.
 
@@ -89,16 +96,11 @@ The portable CLI is intentionally limited to **little-endian mono/stereo PCM16 o
 
 ## Test results and audio comparison
 
-**Successfully tested natively (no JUCE):**
-
-```
-g++ -O2 -std=c++17 tests/fx_tests.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp -o fx_tests && ./fx_tests
-g++ -O2 -std=c++17 tests/fulltake_tests.cpp Source/Offline/FullTakeScan.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp -o fulltake_tests && ./fulltake_tests
-```
+**Tested natively (no JUCE)** - 13 test programs, one command: `scripts/run_tests.sh` (see `docs/BUILD_AND_TEST.md`).
 
 These verify silence numerical safety, pitch detection, stage stereo movement, 44.1/48/96-kHz processing, 4-second scan behavior, full-note score segmentation, SATB editing and finite export-DSP samples. The included CLI was also used to scan a 10-second example into 12 detected notes and render the resulting full-length stereo WAV in `Preview/`.
 
-`Preview/index.html` is an interactive *visual UI mock*, not a VST or audio processor. It is included for easy layout inspection and stage drag testing. `Preview/GUI-design-reference.png` is an illustrative rendering of the intended compact UI, **not a screenshot from a DAW**.
+`Preview/README.md` says what each preview file is (the WAVs are demonstrations from earlier engines, not the plugin's current sound). `Preview/index.html` is an interactive *visual UI mock*, not a VST or audio processor. It is included for easy layout inspection and stage drag testing. `Preview/GUI-design-reference.png` is an illustrative rendering of the intended compact UI, **not a screenshot from a DAW**.
 
 ## Files
 
@@ -109,6 +111,8 @@ These verify silence numerical safety, pitch detection, stage stereo movement, 4
 - `Source/Offline/FullTakeScan.*` — JUCE-free entire-file pitch event analysis and SATB score generation.
 - `Source/Offline/TakeWorker.*` — background file import/export and edited CSV score output.
 - `tools/omnichoir-batch.cpp` — native WAV-to-SATB and offline choir render CLI.
+- `scripts/run_tests.sh` — builds and runs every JUCE-free test with a plain C++ compiler.
+- `tests/` — the tests; `tests/data/` holds the real-vocal fixtures.
 - `Reference/` — user's original and updated demo JS files and image references.
 - `Preview/` — visual mock, GUI concept, sample arrangement CSV and rendered example WAV.
 

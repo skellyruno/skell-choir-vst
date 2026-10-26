@@ -55,7 +55,7 @@ private:
         std::atomic<float>* roomSize=nullptr,*roomSeconds=nullptr,*absorption=nullptr,*diffusion=nullptr;
         std::atomic<float>* wet=nullptr,*mix=nullptr,*master=nullptr;
         std::atomic<float>* leadX=nullptr,*leadY=nullptr,*leadGain=nullptr,*humanize=nullptr,*formant=nullptr,*hall=nullptr,*hallSeconds=nullptr;
-        std::atomic<float>* voiceBlend=nullptr,*choirVowel=nullptr,*vowelFollow=nullptr,*choirBreath=nullptr,*vibrato=nullptr,*classicStage=nullptr;
+        std::atomic<float>* voiceBlend=nullptr,*choirVowel=nullptr,*vowelFollow=nullptr,*choirBreath=nullptr,*vibrato=nullptr,*classicStage=nullptr,*choirLevel=nullptr;
     } raw;
     choir::FXParams readParams() const;
     juce::String irPath, irName;   // message thread only

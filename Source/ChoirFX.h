@@ -27,6 +27,7 @@ struct FXParams : Params {
     float choirBreath = .5f;         // breath at phrase starts and a little air through the tone (distinct from Params::breath)
     float vibrato = .6f;             // vibrato depth of the synthesised singers
     bool classicStage = false;       // A/B: the v0.5 simplified stage instead of the faithful one
+    float choirLevelDb = 0.f;        // v0.6.1: choir level in dB, -12..+12, faithful stage only (the classic stage stays bit-identical to v0.5)
 };
 
 class PitchTracker {

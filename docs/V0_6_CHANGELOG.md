@@ -1,3 +1,5 @@
+> **Update:** see `docs/V0_6_1_CHANGELOG.md` for the v0.6.1 fixes (choir level, CHOIR LEVEL control, state versioning, tests and CI).
+
 # OmniChoir FX v0.6 — the faithful stage replaces the simplified one
 
 v0.5's own notes listed "image-source reflection delays and full mic array response curves" as future work. v0.6 does

@@ -332,7 +332,7 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
     addDial("SOPRANO","gain0",0);addDial("ALTO","gain1",0);
     addDial("TENOR","gain2",0);addDial("BASS","gain3",0);
     addDial("ENSEMBLE","ensemble",0);addDial("HUMANIZE","humanize",0);
-    addDial("CHARACTER","formant",0);addDial("MIX","mix",0);
+    addDial("CHARACTER","formant",0);addDial("MIX","mix",0);addDial("CHOIR LEVEL","choirLevel",0);
     addDial("LEAD LEVEL","leadGain",1);addDial("MIC SPACING","width",1);
     addChoice("MIC ARRAY","micMode",1);addDial("SENSITIVITY","sensitivity",1);
     addDial("SOPRANO","gain0",1);addDial("ALTO","gain1",1);

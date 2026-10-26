@@ -75,7 +75,7 @@ void StagedChoir::reset()
     std::fill(std::begin(classicL_), std::end(classicL_), 0.f); std::fill(std::begin(classicR_), std::end(classicR_), 0.f);
     for (int i = 0; i < numStems; ++i) { std::fill(std::begin(stemOutL_[i]), std::end(stemOutL_[i]), 0.f); std::fill(std::begin(stemOutR_[i]), std::end(stemOutR_[i]), 0.f); }
     for (auto& v : voiceBuf) std::fill(v.begin(), v.end(), 0.f);
-    pos = 0; wetNow = 0; leadGainNow = p.leadGain; lastClassic = p.classicStage;
+    pos = 0; wetNow = 0; leadGainNow = p.leadGain; lastClassic = p.classicStage; trimNow = trimGoal();
     corr = 1.f; wid = 0.f; peakL = peakR = 0.f;
 }
 
@@ -95,6 +95,12 @@ void StagedChoir::applyTo(oc::ChoirStage& s, bool all, int onlySection)
     room.earlyLevel = 0.7; room.lateLevel = 0.6;
     s.setRoom(room);
     s.setReverb(p.wet / kWetUnity);
+}
+
+float StagedChoir::trimGoal() const
+{
+    const float db = std::max(-kChoirLevelMaxDb, std::min(kChoirLevelMaxDb, p.choirLevelDb));
+    return kVoiceTrim * std::pow(10.f, db / 20.f);
 }
 
 void StagedChoir::setParameters(const FXParams& params)
@@ -230,6 +236,7 @@ void StagedChoir::process(const float* inL, const float* inR, float* outL, float
 {
     stemsWanted = stems != nullptr;
     float v[N];
+    const float trimTarget = trimGoal();
     for (int i = 0; i < n; ++i)
     {
         const float l = inL[i], r = inR ? inR[i] : l;      // read before writing: in and out may be the same array
@@ -241,7 +248,8 @@ void StagedChoir::process(const float* inL, const float* inR, float* outL, float
         else
         {
             fx.processVoices(.5f * (l + r), v);
-            for (int k = 0; k < N; ++k) voiceBuf[(size_t) k][(size_t) pos] = v[k] * kVoiceTrim;
+            trimNow += .0007f * (trimTarget - trimNow);   // ~30 ms: no zipper noise on the CHOIR LEVEL dial
+            for (int k = 0; k < N; ++k) voiceBuf[(size_t) k][(size_t) pos] = v[k] * trimNow;
         }
         outL[i] = outL_[pos];
         if (outR) outR[i] = outR_[pos];
