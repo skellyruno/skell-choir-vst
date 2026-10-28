@@ -30,6 +30,34 @@ because it used MIX .93, ROOM RETURN .72, ENSEMBLE .69, a 2.3x gain boost and pe
 6. **CI**: `native-tests` (everything, then everything under ASan+UBSan), then `plugin` on Windows, macOS and Linux: build, CTest, and **pluginval at strictness 5** on the built VST3. Previously CI only built on Windows and macOS and never ran a test.
 7. **Housekeeping**: `scripts/run_tests.sh` (all tests, no CMake or JUCE), `docs/BUILD_TEST_V05.md` -> `docs/BUILD_AND_TEST.md` (rewritten), `Preview/OmniChoir-FX-v0.4-Preview.wav` -> `Preview/Demo-v0.4-classic-engine.wav` plus `Preview/README.md`, `.gitignore`, no `__pycache__`/`.pyc` in the package.
 
+## The new interface
+
+The editor was rebuilt to follow `Preview/GUI-design-reference.png`: warm black and brass, a gold serif logo, glossy gold pill buttons, gold-arc
+knobs, colour-coded section faders, and a live cathedral stage (light falling from the window that brightens with your voice, drifting dust,
+singer groups that glow while they sing, a breathing gold microphone ring, hover highlights).
+
+**Simpler.** The old editor had six tabs and roughly 30 knobs, with the four section levels on two pages at once. Now:
+
+| Tab | What is on it |
+|---|---|
+| **MAIN** (opens here) | 5 knobs: CHOIR MIX, ENSEMBLE, HUMANIZE, SPACE, OUTPUT. 5 faders: soprano, alto, tenor, bass, your lead. 2 dropdowns: PROCESS, HARMONY. |
+| ROOM | ROOM SIZE, REVERB TIME, DAMPING, DIFFUSION, HALL, HALL TIME, MIC SPACING; MIC ARRAY; the ENGINE (faithful/classic) switch; LOAD ROOM IR |
+| VOICE | CHOIR LEVEL, CHARACTER, SENSITIVITY, VOICE BLEND, VOWEL, FOLLOW LEAD, BREATH, VIBRATO |
+| TAKE | Import a full take, edit the notes, render WAV, export MIDI |
+| STEMS | Load a stem manifest and mix it |
+
+Every parameter still exists and is automatable; the advanced ones just are not in your face. Values read in plain units (%, dB, s, m) instead of 0 to 1.
+The stage presets, the SCAN LIVE INPUT button and the CHOIR on/off switch live in the header. Hover any control for a one-line explanation.
+
+**UI bugs fixed along the way**
+- Tooltips never appeared: the editor had no `TooltipWindow`.
+- Double-clicking the lead put its Y at 0 instead of its default 0.4, which moved it off its home position (and so off an exactly-dry sound). Double-click now returns each item to its own default, including the singer groups, which could not be reset before.
+- Double-clicking the mic moved the lead along with it; the lead now stays where it stands, as it does when you drag the mic.
+- The ROOM IR needed two buttons; it is now one button with a menu.
+- UI text is checked to be plain ASCII (`juce::String` asserts on non-ASCII literals, which is what produced the garbled labels in an earlier version).
+
+**How this was checked, and what was not.** `scripts/check_ui_syntax.sh` type-checks `PluginEditor.cpp` and `PluginProcessor.cpp` against `tests/juce_stub/`, a hand-written stand-in for the JUCE API (see its README), and it is part of `scripts/run_tests.sh`. That catches typos, wrong names and type errors in the glue. It cannot catch a mistake about the real JUCE API, and **nobody has seen this interface rendered**: layout, spacing, colours and the stage animation are unverified until the CI `plugin` job builds the plugin and you open it. Expect to adjust sizes and spacing after the first look. `Preview/index.html` is the old mock and does not show the new layout.
+
 ## Corrections to earlier notes
 
 - An earlier review said the bass voice was 5 to 12 dB weaker than the others. That came from a single-frequency-bin measurement of a synthetic tone and was wrong. Measured as loudness, on synthetic and on real vocals, all four sections are within about 1 dB. Nothing was changed; the `balance` and `real_vocal` tests now guard it.

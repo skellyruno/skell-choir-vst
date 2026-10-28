@@ -9,7 +9,8 @@ voice with a faint halo. The faithful choir now carries a +12 dB make-up, a new 
 and the default **OUTPUT** is 1.2. Saved sessions are versioned: a session saved by v0.6.0 or earlier loads with CHOIR LEVEL at -12 dB so it
 sounds exactly as it did (set the dial to 0 to hear the new level). New goal-based tests (`balance`, `real_vocal`) fail if the choir ever
 sinks below the lead again, and `scripts/run_tests.sh` runs everything with only a C++ compiler. CI now builds the VST3 on Windows, macOS
-and Linux and validates it with pluginval. Details, measurements and known limits: **`docs/V0_6_1_CHANGELOG.md`**.
+and Linux and validates it with pluginval. The editor was also rebuilt to follow `Preview/GUI-design-reference.png` and simplified: the first screen is 5 knobs, 5 faders and 2 dropdowns, with the room and voice details on their own tabs.
+Details, measurements and known limits: **`docs/V0_6_1_CHANGELOG.md`**.
 
 ## v0.6 — the faithful stage
 
@@ -96,7 +97,7 @@ The portable CLI is intentionally limited to **little-endian mono/stereo PCM16 o
 
 ## Test results and audio comparison
 
-**Tested natively (no JUCE)** - 13 test programs, one command: `scripts/run_tests.sh` (see `docs/BUILD_AND_TEST.md`).
+**Tested natively (no JUCE)** - 14 checks, one command: `scripts/run_tests.sh` (see `docs/BUILD_AND_TEST.md`).
 
 These verify silence numerical safety, pitch detection, stage stereo movement, 44.1/48/96-kHz processing, 4-second scan behavior, full-note score segmentation, SATB editing and finite export-DSP samples. The included CLI was also used to scan a 10-second example into 12 detected notes and render the resulting full-length stereo WAV in `Preview/`.
 

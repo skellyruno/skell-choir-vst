@@ -21,6 +21,8 @@ No CMake, no JUCE, no internet. Logs are written to `build-native/`. The suite i
 
 The same tests run under CTest: `cmake -S . -B build-native -DOMNICHOIR_NATIVE_ONLY=ON && cmake --build build-native && ctest --test-dir build-native --output-on-failure`.
 
+`scripts/check_ui_syntax.sh` (also run by `scripts/run_tests.sh`) type-checks the JUCE glue against `tests/juce_stub/`, a stand-in for the JUCE API, and checks that UI strings are plain ASCII. It is a fast sanity check, not a substitute for the real build below.
+
 `tests/calibrate_trim.cpp` is a measuring tool, not a test: it prints the choir level of the v0.5 stage against the faithful stage.
 
 ## 2. The plugin (VST3)
@@ -46,7 +48,10 @@ Until this workflow has run green, the JUCE layer (processor, editor, TakeWorker
 
 ## 4. UI behaviour worth knowing
 
-- `SCAN / EDIT`: after importing a take, `EXPORT MIDI` writes a five-track MIDI file (Soprano, Alto, Tenor, Bass, Lead).
-- `STEMS`: load a JSON manifest, drag the stage groups to adjust position, then `MIX STEMS WAV`. Closing the plugin editor cancels active file operations.
-- `VOICE` page: **CHOIR LEVEL** (-12..+12 dB) sets the choir against the lead. It applies to the faithful stage; the classic v0.5 stage is bit-identical to v0.5 and ignores it.
-- `ROOM` controls affect the realtime DSP. For the imported-stem path, set `"room": 0.2` in the manifest; its spatial engine is a lightweight offline approximation.
+- Tabs: `MAIN` (choir mix, ensemble, humanize, space, output, the four section faders and the lead fader, PROCESS and HARMONY), `ROOM`, `VOICE`, `TAKE`, `STEMS`. Hover any control for a tooltip.
+- Stage: drag the four sections, your lead or the mic. Double-click one to put it back to its default.
+- `ROOM`: the ENGINE switch picks the faithful stage or the simpler classic v0.5 stage; LOAD ROOM IR takes a recording of a real room for the HALL (click it again for a menu to swap or remove it).
+- `VOICE`: **CHOIR LEVEL** (-12..+12 dB) sets the choir against the lead. It applies to the faithful stage; the classic stage is bit-identical to v0.5 and ignores it.
+- `TAKE`: after importing a take, `EXPORT MIDI` writes a five-track MIDI file (Soprano, Alto, Tenor, Bass, Lead).
+- `STEMS`: load a JSON manifest, then `MIX STEMS WAV`. Closing the plugin editor cancels active file operations.
+- For the imported-stem path, set `"room": 0.2` in the manifest; its spatial engine is a lightweight offline approximation.

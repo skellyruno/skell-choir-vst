@@ -49,5 +49,10 @@ if [[ -z "$filter" ]] && command -v python3 > /dev/null; then
   if python3 -m unittest discover -s tests -p test_interop_tools.py > "$OUT/python_interop.log" 2>&1; then echo "ok   $(tail -n1 "$OUT/python_interop.log")"; pass=$((pass+1))
   else echo "FAILED (see $OUT/python_interop.log)"; fail=$((fail+1)); failed+=(python_interop); fi
 fi
+if [[ -z "$filter" ]]; then
+  printf '%-18s ' "ui_syntax"
+  if bash scripts/check_ui_syntax.sh > "$OUT/ui_syntax.log" 2>&1; then echo "ok   plugin glue type-checks against the JUCE stub, UI strings are ASCII"; pass=$((pass+1))
+  else echo "FAILED (see $OUT/ui_syntax.log)"; tail -n 6 "$OUT/ui_syntax.log" | sed 's/^/                     /'; fail=$((fail+1)); failed+=(ui_syntax); fi
+fi
 echo; echo "$pass passed, $fail failed${failed:+: ${failed[*]}}"
 [ "$fail" -eq 0 ]

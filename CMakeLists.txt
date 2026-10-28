@@ -56,7 +56,8 @@ target_sources(OmniChoirFX PRIVATE
     Source/PluginProcessor.h
     Source/PluginProcessor.cpp
     Source/PluginEditor.h
-    Source/PluginEditor.cpp)
+    Source/PluginEditor.cpp
+    Source/UI/OmniLookAndFeel.h)
 target_compile_features(OmniChoirFX PRIVATE cxx_std_17)
 target_compile_definitions(OmniChoirFX PRIVATE
     JUCE_WEB_BROWSER=0
