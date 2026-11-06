@@ -1,8 +1,22 @@
-# OmniChoir FX 0.6.1 — live vocal choirification + full-take SATB scan + external singer tools
+# OmniChoir FX 0.8.0 — live vocal choirification + full-take SATB scan + external singer tools
 
 **VST3 effect source project — not a compiled plugin.** This is an upgrade of the OmniChoir FX starter using your original JS stage, worklet, renderer, latest `omnichoir-demo.js`, the five photographic references, and the screenshot of the larger GUI. The original JS files are kept verbatim in `Reference/` for continued native porting. The browser `AudioWorklet` itself cannot execute as a native VST3 audio callback; the relevant stage/mic/group interaction patterns and acoustic concepts are translated into C++.
 
-## v0.6.1 — level fix, CHOIR LEVEL, and a real test suite (this release)
+## v0.8 — Listen mode, key and scale, consonants, your own styles (this release)
+
+**Listen**: play your vocal through once; the plugin analyses it into notes (piano roll, editable) and the choir then sings that score in your key, in time with the host.
+You choose the **key and scale** (nothing is detected). **Consonants** pass through cleanly instead of being smeared; **Swell** makes the choir follow your dynamics and **Pulse** breathes in time with the song;
+save and load **your own styles**; a first-run tour and a remembered window size. `scripts/build_listening_pack.sh` renders your vocal through every feature so you can hear it; CI now also takes screenshots of every tab.
+Measurements, what is and is not verified, and the known limits: **`docs/V0_8_CHANGELOG.md`**. The JUCE layer has still never been compiled against real JUCE and nothing has been listened to.
+
+## v0.7 — styles, MIDI chords, auto level and an Easy mode
+
+AUTO LEVEL keeps the loudness steady as CHOIR MIX moves; one CHOIR SIZE knob and an Easy mode (just a few big controls); six one-click STYLES and SURPRISE ME;
+**MIDI Chord** mode (hold keys, the choir sings that chord from your voice); solo/mute by clicking a section's name on the stage; a livelier stage; three built-in
+rooms (synthetic); a somewhat steadier pitch tracker. Measurements, what is and is not verified, and the known limits: **`docs/V0_7_CHANGELOG.md`**.
+The JUCE layer is still unbuilt against real JUCE and nothing has been listened to: the CI `plugin` job is the first real compile.
+
+## v0.6.1 — level fix, CHOIR LEVEL, and a real test suite
 
 At the default settings the choir was about 24 dB under the input and about 11 dB under your own dry voice, so it sounded like a solo
 voice with a faint halo. The faithful choir now carries a +12 dB make-up, a new **CHOIR LEVEL** dial (-12..+12 dB) sets it against the lead,
@@ -97,7 +111,7 @@ The portable CLI is intentionally limited to **little-endian mono/stereo PCM16 o
 
 ## Test results and audio comparison
 
-**Tested natively (no JUCE)** - 14 checks, one command: `scripts/run_tests.sh` (see `docs/BUILD_AND_TEST.md`).
+**Tested natively (no JUCE)** - 23 checks, one command: `scripts/run_tests.sh` (see `docs/BUILD_AND_TEST.md`).
 
 These verify silence numerical safety, pitch detection, stage stereo movement, 44.1/48/96-kHz processing, 4-second scan behavior, full-note score segmentation, SATB editing and finite export-DSP samples. The included CLI was also used to scan a 10-second example into 12 detected notes and render the resulting full-length stereo WAV in `Preview/`.
 

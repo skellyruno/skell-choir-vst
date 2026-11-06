@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(OmniChoirFX VERSION 0.6.1 LANGUAGES C CXX)
+project(OmniChoirFX VERSION 0.8.0 LANGUAGES C CXX)
 
 option(OMNICHOIR_NATIVE_ONLY "Build JUCE-free tests without fetching JUCE" OFF)
 option(OMNICHOIR_BUILD_TESTS "Build JUCE-free native DSP tests" ${OMNICHOIR_NATIVE_ONLY})
@@ -23,13 +23,13 @@ juce_add_plugin(OmniChoirFX
     FORMATS VST3
     PRODUCT_NAME "OmniChoir FX"
     IS_SYNTH FALSE
-    NEEDS_MIDI_INPUT FALSE
+    NEEDS_MIDI_INPUT TRUE      # v0.7: MIDI Chord mode. Still an audio effect (IS_SYNTH FALSE); DAWs that do not route MIDI to effects simply never send any
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     COPY_PLUGIN_AFTER_BUILD FALSE)
 
 juce_generate_juce_header(OmniChoirFX)
-juce_add_binary_data(OmniChoirFXArt SOURCES Assets/cathedral_stage.jpg)
+juce_add_binary_data(OmniChoirFXArt SOURCES Assets/cathedral_stage.jpg Assets/Rooms/room_cathedral.wav Assets/Rooms/room_chapel.wav Assets/Rooms/room_small_hall.wav)
 target_link_libraries(OmniChoirFX PRIVATE OmniChoirFXArt)
 target_sources(OmniChoirFX PRIVATE
     Source/ChoirFX.h
@@ -57,7 +57,13 @@ target_sources(OmniChoirFX PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.h
     Source/PluginEditor.cpp
-    Source/UI/OmniLookAndFeel.h)
+    Source/UI/OmniLookAndFeel.h
+    Source/StylePresets.h
+    Source/MidiChord.h
+    Source/Scales.h
+    Source/Consonants.h
+    Source/StyleFile.h
+    Source/Offline/ListenSession.h)
 target_compile_features(OmniChoirFX PRIVATE cxx_std_17)
 target_compile_definitions(OmniChoirFX PRIVATE
     JUCE_WEB_BROWSER=0
@@ -69,6 +75,27 @@ target_link_libraries(OmniChoirFX PRIVATE
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
+
+# Optional: a headless tool that paints every tab to PNG (tools/screenshots.cpp). Off by default; the CI "screenshots" job turns it on.
+option(OMNICHOIR_BUILD_SCREENSHOTS "Also build the headless screenshot tool" OFF)
+if(OMNICHOIR_BUILD_SCREENSHOTS)
+    juce_add_console_app(OmniChoirScreenshots PRODUCT_NAME "OmniChoirScreenshots")
+    juce_generate_juce_header(OmniChoirScreenshots)
+    target_sources(OmniChoirScreenshots PRIVATE
+        tools/screenshots.cpp
+        Source/ChoirFX.cpp Source/StagedChoir.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp
+        Source/Offline/FullTakeScan.cpp Source/Offline/ExternalStemMixer.cpp Source/Offline/TakeWorker.cpp
+        Source/PluginProcessor.cpp Source/PluginEditor.cpp)
+    target_include_directories(OmniChoirScreenshots PRIVATE Source)
+    target_compile_features(OmniChoirScreenshots PRIVATE cxx_std_17)
+    target_compile_definitions(OmniChoirScreenshots PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(OmniChoirScreenshots PRIVATE
+        OmniChoirFXArt
+        juce::juce_audio_utils
+        juce::juce_audio_processors
+        juce::juce_gui_extra
+        juce::juce_recommended_config_flags)
+endif()
 
 endif() # native tests do not need JUCE
 if(OMNICHOIR_BUILD_TESTS)
@@ -112,6 +139,37 @@ if(OMNICHOIR_BUILD_TESTS)
     add_executable(OmniChoirRealVocalTests tests/real_vocal_tests.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
     target_compile_features(OmniChoirRealVocalTests PRIVATE cxx_std_17)
     add_test(NAME real_vocal_tracker_and_balance COMMAND OmniChoirRealVocalTests ${CMAKE_CURRENT_SOURCE_DIR}/tests/data)
+    add_executable(OmniChoirMidiChordTests tests/midi_chord_tests.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
+    target_compile_features(OmniChoirMidiChordTests PRIVATE cxx_std_17)
+    add_test(NAME midi_chord_mode COMMAND OmniChoirMidiChordTests)
+    add_executable(OmniChoirStyleTests tests/style_tests.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
+    target_compile_features(OmniChoirStyleTests PRIVATE cxx_std_17)
+    add_test(NAME styles_size_and_surprise COMMAND OmniChoirStyleTests ${CMAKE_CURRENT_SOURCE_DIR})
+    add_executable(OmniChoirRoomIrTests tests/room_ir_tests.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
+    target_compile_features(OmniChoirRoomIrTests PRIVATE cxx_std_17)
+    add_test(NAME built_in_rooms COMMAND OmniChoirRoomIrTests ${CMAKE_CURRENT_SOURCE_DIR})
+    find_package(Threads REQUIRED)
+    set(OMNICHOIR_ENGINE Source/StagedChoir.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
+    add_executable(OmniChoirKeyScaleTests tests/key_scale_tests.cpp ${OMNICHOIR_ENGINE})
+    target_compile_features(OmniChoirKeyScaleTests PRIVATE cxx_std_17)
+    add_test(NAME key_and_scale COMMAND OmniChoirKeyScaleTests)
+    add_executable(OmniChoirSwellPulseTests tests/swell_pulse_tests.cpp ${OMNICHOIR_ENGINE})
+    target_compile_features(OmniChoirSwellPulseTests PRIVATE cxx_std_17)
+    add_test(NAME swell_and_pulse COMMAND OmniChoirSwellPulseTests)
+    add_executable(OmniChoirConsonantTests tests/consonant_tests.cpp ${OMNICHOIR_ENGINE})
+    target_compile_features(OmniChoirConsonantTests PRIVATE cxx_std_17)
+    add_test(NAME consonants COMMAND OmniChoirConsonantTests ${CMAKE_CURRENT_SOURCE_DIR})
+    add_executable(OmniChoirStyleFileTests tests/style_file_tests.cpp ${OMNICHOIR_ENGINE})
+    target_compile_features(OmniChoirStyleFileTests PRIVATE cxx_std_17)
+    add_test(NAME style_files COMMAND OmniChoirStyleFileTests ${CMAKE_CURRENT_SOURCE_DIR})
+    add_executable(OmniChoirListenTests tests/listen_tests.cpp Source/Offline/FullTakeScan.cpp ${OMNICHOIR_ENGINE})
+    target_compile_features(OmniChoirListenTests PRIVATE cxx_std_17)
+    target_link_libraries(OmniChoirListenTests PRIVATE Threads::Threads)
+    add_test(NAME listen_mode COMMAND OmniChoirListenTests ${CMAKE_CURRENT_SOURCE_DIR})
+    add_executable(OmniChoirListenRaceTests tests/listen_race_tests.cpp Source/Offline/FullTakeScan.cpp ${OMNICHOIR_ENGINE})
+    target_compile_features(OmniChoirListenRaceTests PRIVATE cxx_std_17)
+    target_link_libraries(OmniChoirListenRaceTests PRIVATE Threads::Threads)
+    add_test(NAME listen_capture_race COMMAND OmniChoirListenRaceTests)
     add_executable(OmniChoirCalibrateTrim tests/calibrate_trim.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
     target_compile_features(OmniChoirCalibrateTrim PRIVATE cxx_std_17)
     add_executable(OmniChoirFullTakeTests tests/fulltake_tests.cpp
