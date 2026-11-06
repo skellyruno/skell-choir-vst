@@ -23,6 +23,8 @@ void StagedChoir::prepare(double sampleRate)
 {
     sr = sampleRate;
     fx.prepare(sampleRate);
+    consonantDetector.prepare(sampleRate);
+    consonantIn.assign((size_t) block, 0.f);
 
     oc::StageConfig cfg;
     cfg.sampleRate = sampleRate; cfg.engineBlock = block;
@@ -76,6 +78,7 @@ void StagedChoir::reset()
     for (int i = 0; i < numStems; ++i) { std::fill(std::begin(stemOutL_[i]), std::end(stemOutL_[i]), 0.f); std::fill(std::begin(stemOutR_[i]), std::end(stemOutR_[i]), 0.f); }
     for (auto& v : voiceBuf) std::fill(v.begin(), v.end(), 0.f);
     pos = 0; wetNow = 0; leadGainNow = p.leadGain; lastClassic = p.classicStage; trimNow = trimGoal();
+    swellEnv = swellRef = 0; swellActive = 0; pulsePhase = 0;
     corr = 1.f; wid = 0.f; peakL = peakR = 0.f;
 }
 
@@ -106,6 +109,12 @@ float StagedChoir::trimGoal() const
 void StagedChoir::setParameters(const FXParams& params)
 {
     p = params;
+    if (p.pulseRate > 0 && p.ppq >= 0.0)      // follow the host's position: re-sync only when we have drifted more than a 16th of a beat
+    {
+        const double period = pulsePeriodBeats(p.pulseRate);
+        double d = std::fmod(pulsePhase - p.ppq, period); if (d < -period / 2) d += period; if (d > period / 2) d -= period;
+        if (std::fabs(d) > .0625) pulsePhase = p.ppq;
+    }
     if (p.classicStage) fx.setParameters(p); else fx.setVoiceParameters(p);   // the classic stage needs the v0.5 room and pan set-up too
     if (!stage) return;
     applyTo(*stage, true, 0);
@@ -184,13 +193,18 @@ void StagedChoir::renderBlock()
 
         const float targetWet = p.choirOn ? p.mix : 0.f;
         const float g0 = leadGainNow, g1 = p.leadGain;
+        const float choirRatio = kMatchedChoirRatio * std::pow(10.f, std::max(-kChoirLevelMaxDb, std::min(kChoirLevelMaxDb, p.choirLevelDb)) / 20.f);
         for (int i = 0; i < block; ++i)
         {
             wetNow += .002f * (targetWet - wetNow);
             const float dry = 1.f - wetNow;
             const float lg = g0 + (g1 - g0) * (float) (i + 1) / (float) block;
-            outL_[i] = (float) oc::safetyCeiling(p.master * (dry * leadL[i] * lg + wetNow * choirL[i]));
-            outR_[i] = (float) oc::safetyCeiling(p.master * (dry * leadR[i] * lg + wetNow * choirR[i]));
+            const float c = wetNow * choirRatio;
+            const float match = p.levelMatch ? 1.f / std::sqrt(dry * dry + c * c + 1e-9f) : 1.f;   // follows the smoothed mix, so it never steps
+            // the clean consonant is scaled by the choir's share: the dry lead already carries (1 - mix) of its own consonants
+            const float clean = wetNow * consonantIn[(size_t) i];
+            outL_[i] = (float) oc::safetyCeiling(p.master * (match * (dry * leadL[i] * lg + wetNow * choirL[i]) + clean));
+            outR_[i] = (float) oc::safetyCeiling(p.master * (match * (dry * leadR[i] * lg + wetNow * choirR[i]) + clean));
         }
         leadGainNow = g1;
 
@@ -228,6 +242,7 @@ void StagedChoir::renderBlock()
         corr += .1f * ((float) (lr / std::sqrt(ll * rr + 1e-18)) - corr);
         wid += .1f * ((float) (std::sqrt(ss) / (std::sqrt(mm) + std::sqrt(ss) + 1e-12)) - wid);
     }
+    meters.pitchConfidence.store(fx.pitchConfidence(), std::memory_order_relaxed);
     meters.outPeakL.store(peakL, std::memory_order_relaxed); meters.outPeakR.store(peakR, std::memory_order_relaxed);
     meters.correlation.store(corr, std::memory_order_relaxed); meters.width.store(wid, std::memory_order_relaxed);
 }
@@ -247,9 +262,35 @@ void StagedChoir::process(const float* inL, const float* inR, float* outL, float
         }
         else
         {
-            fx.processVoices(.5f * (l + r), v);
+            const float mono = .5f * (l + r);
+            // CONSONANTS: the choir is fed the voice without its consonants, and the original consonant goes straight to the output
+            float choirInput = mono;
+            if (p.consonants > 0.f)
+            {
+                const float consonant = consonantDetector.process(mono);
+                choirInput = mono * (1.f - .95f * p.consonants * consonant);
+                consonantIn[(size_t) pos] = mono * consonant * p.consonants;
+            }
+            else consonantIn[(size_t) pos] = 0.f;
+            fx.processVoices(choirInput, v);
             trimNow += .0007f * (trimTarget - trimNow);   // ~30 ms: no zipper noise on the CHOIR LEVEL dial
-            for (int k = 0; k < N; ++k) voiceBuf[(size_t) k][(size_t) pos] = v[k] * trimNow;
+            float shape = 1.f;
+            if (p.swell > 0.f)                            // SWELL: the choir follows how loud you sing against your own average
+            {
+                const float a = std::fabs(mono);
+                swellEnv += (a > swellEnv ? .004f : .0006f) * (a - swellEnv);                     // ~5 ms up, ~35 ms down at 44.1 kHz
+                if (swellEnv > .003f) { swellActive += 1.0; swellRef += (float) std::max(1.0 / (3.0 * sr), 1.0 / swellActive) * (swellEnv - swellRef); }   // average over ~3 s, learned quickly at first
+                const float ratio = swellRef > 1.0e-6f ? swellEnv / swellRef : 1.f;
+                shape *= std::max(.25f, std::min(2.5f, std::pow(std::max(ratio, .05f), kSwellExponent * p.swell)));
+            }
+            if (p.pulseRate > 0)                          // PULSE: breathes in time with the song
+            {
+                const double period = pulsePeriodBeats(p.pulseRate), bpmNow = p.bpm > 1.0 ? p.bpm : 120.0;
+                pulsePhase += bpmNow / (60.0 * sr);
+                const double phase = std::fmod(pulsePhase, period) / period;                     // 0..1 through the period; full level at 0, lowest at the middle
+                shape *= 1.f - p.pulseDepth * (float) (.5 - .5 * std::cos(6.283185307179586 * phase));
+            }
+            for (int k = 0; k < N; ++k) voiceBuf[(size_t) k][(size_t) pos] = v[k] * trimNow * shape;
         }
         outL[i] = outL_[pos];
         if (outR) outR[i] = outR_[pos];

@@ -126,7 +126,7 @@ private:
 };
 
 // A singer: a robed figure with a gradient and a rim light.
-void drawFigure(juce::Graphics& g,juce::Point<float> center,juce::Colour colour,float size) {
+void drawFigure(juce::Graphics& g,juce::Point<float> center,juce::Colour colour,float size,float mouth=0.f) {
     const float x=center.x,y=center.y;
     g.setColour(juce::Colours::black.withAlpha(.35f));
     g.fillEllipse(x-size*.72f,y+size*.86f,size*1.44f,size*.21f);
@@ -143,6 +143,17 @@ void drawFigure(juce::Graphics& g,juce::Point<float> center,juce::Colour colour,
     g.setColour(colour.brighter(.25f));g.fillEllipse(x-size*.25f,y-size*.74f,size*.50f,size*.58f);
     g.setColour(juce::Colours::white.withAlpha(.32f));
     g.drawEllipse(x-size*.25f,y-size*.74f,size*.50f,size*.58f,.7f);
+    if(mouth>.02f) {   // singing: the mouth opens with the level
+        g.setColour(juce::Colours::black.withAlpha(.55f));
+        g.fillEllipse(x-size*.065f,y-size*.33f,size*.13f,size*(.025f+.10f*mouth));
+    }
+}
+juce::File settingsFolder() {   // per user, not per project: the tour has been seen, the window size you like
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("OmniChoir FX");
+}
+void loadWindowSize(int& width,int& height) {
+    const auto parts=juce::StringArray::fromTokens(settingsFolder().getChildFile("window-size.txt").loadFileAsString(),juce::String(" \n"),juce::String());
+    if(parts.size()>=2 && parts[0].getIntValue()>0 && parts[1].getIntValue()>0) {width=parts[0].getIntValue();height=parts[1].getIntValue();}
 }
 float levelToGlow(float level) {   // a linear level as 0..1 over -54 dB .. 0 dB
     return juce::jlimit(0.f,1.f,(20.f*std::log10(std::max(level,1.0e-5f))+54.f)/54.f);
@@ -177,10 +188,27 @@ void MeterStrip::paint(juce::Graphics& g) {
 }
 
 // ============================================================================================== stage
+juce::Rectangle<float> StageView::pillBounds(int section) const {
+    const auto tag=worldToPoint(value("x"+juce::String(section)),value("y"+juce::String(section))-1.05f);
+    return juce::Rectangle<float>(tag.x-34.f,tag.y-8.f,68.f,16.f);
+}
+int StageView::hitPill(juce::Point<float> pos) const {
+    for(int i=0;i<4;++i) if(pillBounds(i).expanded(2.f).contains(pos)) return i;
+    return -2;
+}
+void StageView::toggleState(int section,bool mute) {
+    const auto id="sectionState"+juce::String(section);
+    if(auto* param=processor.parameters.getParameter(id)) {
+        const int now=(int)value(id);
+        const float next=mute?(now==2?0.f:2.f):(now==1?0.f:1.f);   // click: solo on/off. right-click or shift-click: mute on/off
+        param->beginChangeGesture();param->setValueNotifyingHost(param->convertTo0to1(next));param->endChangeGesture();
+    }
+}
 StageView::StageView(OmniChoirAudioProcessor& p):processor(p),
     cathedral(juce::ImageCache::getFromMemory(BinaryData::cathedral_stage_jpg,
                                               BinaryData::cathedral_stage_jpgSize)) {
     setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+    setTooltip("Drag the singers, your lead and the mic. Double-click one to put it back. Click a name to solo that section; right-click (or shift-click) to mute it.");
     startTimerHz(30);
 }
 juce::Rectangle<float> StageView::plot() const {return getLocalBounds().toFloat().reduced(7.f,7.f);}
@@ -309,34 +337,55 @@ void StageView::paint(juce::Graphics& g) {
             const float size=1.1f+1.6f*hash(i,5);
             g.fillEllipse(px,py,size,size);
         }
-        // the four sections
+        // the four sections. Click a name tag to solo it, right-click (or shift-click) to mute it.
+        bool anySolo=false;
+        for(int i=0;i<4;++i) if((int)value("sectionState"+juce::String(i))==1) anySolo=true;
         for(int i=0;i<4;++i) {
             const float x=value("x"+juce::String(i)),y=value("y"+juce::String(i));
+            const int state=(int)value("sectionState"+juce::String(i));
+            const bool audible=anySolo?state==1:state!=2;      // what you actually hear
             const auto base=kSection[(size_t)i];
-            const auto c=base.withMultipliedSaturation(on?1.f:.3f);
-            const float glow=on?levelToGlow(processor.meters().section[i].load(std::memory_order_relaxed)*4.f):0.f;   // how loudly it sings right now
+            const bool lit=on&&audible;
+            const auto c=base.withMultipliedSaturation(lit?1.f:.3f);
+            const float glow=lit?levelToGlow(processor.meters().section[i].load(std::memory_order_relaxed)*4.f):0.f;   // how loudly it sings right now
             const auto gc=worldToPoint(x,y);
             g.setGradientFill(juce::ColourGradient(c.withAlpha(.05f+.34f*glow),gc.x,gc.y,c.withAlpha(0.f),gc.x+96.f,gc.y,true));
             g.fillEllipse(gc.x-110.f,gc.y-62.f,220.f,124.f);
             const float singerSize=juce::jlimit(11.f,19.f,(getHeight()*.05f)-.18f*(y-5.f))*(1.f+.07f*glow);
             for(int row=2;row>=0;--row)for(int col=0;col<4;++col) {
                 const float dx=(col-1.5f)*.47f+(row%2)*.12f,dy=(row-1.f)*.53f;
-                drawFigure(g,worldToPoint(x+dx,y+dy),c.withMultipliedAlpha(on?1.f:.5f),singerSize);
+                const float phase=(float)(row*4+col+i*5);
+                auto where=worldToPoint(x+dx,y+dy);
+                const float open=glow*(.55f+.45f*std::sin(t*7.f+phase*1.7f));          // the mouths open with the level
+                where.x+=std::sin(t*2.3f+phase)*glow*singerSize*.06f;                  // and they sway a little as they sing
+                where.y-=open*singerSize*.04f;
+                drawFigure(g,where,c.withMultipliedAlpha(lit?1.f:.45f),singerSize,open);
             }
             if(hover==i||dragging==i) {g.setColour(base.withAlpha(.85f));g.drawEllipse(gc.x-72.f,gc.y-36.f,144.f,72.f,1.4f);}
-            const auto tag=worldToPoint(x,y-1.05f);
-            const juce::Rectangle<float> pill(tag.x-34.f,tag.y-8.f,68.f,16.f);
+            const auto pill=pillBounds(i);
+            const bool pillHot=hoverPill==i;
             g.setColour(kBg.withAlpha(.62f));g.fillRoundedRectangle(pill,8.f);
-            g.setColour(c.withAlpha(.9f));g.drawRoundedRectangle(pill.reduced(.5f),8.f,1.f);
+            g.setColour((pillHot?base:c).withAlpha(pillHot?1.f:.9f));g.drawRoundedRectangle(pill.reduced(.5f),8.f,pillHot?1.7f:1.f);
             g.setFont(boldFont(9.5f));
-            g.drawText(sectionNames[i],pill,juce::Justification::centred);
+            g.setColour(c.withAlpha(audible?1.f:.55f));
+            g.drawText(sectionNames[i],state!=0?pill.withTrimmedRight(11.f):pill,juce::Justification::centred);
+            if(state!=0) {      // S = soloed, M = muted
+                const juce::Rectangle<float> badge(pill.getRight()-15.f,pill.getY()+1.f,14.f,14.f);
+                g.setColour(state==1?kGold:juce::Colour(0xff8c2f3a));g.fillEllipse(badge);
+                g.setColour(state==1?kInk:kCream);g.setFont(boldFont(9.f));
+                g.drawText(state==1?"S":"M",badge,juce::Justification::centred);
+            }
         }
-        // the lead: glows while you sing
+        // the lead: glows while you sing, breathes while her pitch is locked
         const auto lead=leadPosition();
-        g.setGradientFill(juce::ColourGradient(kLead.withAlpha(.08f+.34f*input),lead.x,lead.y,kLead.withAlpha(0.f),lead.x+44.f,lead.y,true));
-        g.fillEllipse(lead.x-48.f,lead.y-48.f,96.f,96.f);
+        const float confidence=juce::jlimit(0.f,1.f,processor.meters().pitchConfidence.load(std::memory_order_relaxed));
+        const float locked=confidence>.5f?(confidence-.5f)*2.f:0.f;               // 0..1 once the tracker is sure of a pitch
+        const float breathe=1.f+.12f*locked*std::sin(t*5.f);
+        g.setGradientFill(juce::ColourGradient(kLead.withAlpha(.08f+.34f*input),lead.x,lead.y,kLead.withAlpha(0.f),lead.x+44.f*breathe,lead.y,true));
+        g.fillEllipse(lead.x-48.f*breathe,lead.y-48.f*breathe,96.f*breathe,96.f*breathe);
+        if(locked>0.f) {g.setColour(kGold.withAlpha(.18f+.5f*locked));g.drawEllipse(lead.x-30.f,lead.y+13.f,60.f,16.f,1.3f);}   // a gold ring at her feet while the pitch is locked
         if(hover==-3||dragging==-3) {g.setColour(kLead.withAlpha(.8f));g.drawEllipse(lead.x-27.f,lead.y-29.f,54.f,58.f,1.3f);}
-        drawFigure(g,lead,juce::Colour(0xffeee8d9),20.f);
+        drawFigure(g,lead,juce::Colour(0xffeee8d9),20.f,input*(.6f+.4f*std::sin(t*8.f)));
         {
             const juce::Rectangle<float> pill(lead.x-24.f,lead.y+20.f,48.f,15.f);
             g.setColour(kBg.withAlpha(.62f));g.fillRoundedRectangle(pill,7.5f);
@@ -364,6 +413,16 @@ void StageView::paint(juce::Graphics& g) {
         chip({r.getX()+10.f,r.getY()+9.f,184.f,18.f},"DRAG SINGERS / LEAD / MIC",kGold);
         chip({r.getRight()-130.f,r.getY()+9.f,120.f,18.f},"CATHEDRAL STAGE",kCream);
         if(!on)chip({r.getCentreX()-46.f,r.getY()+9.f,92.f,18.f},"CHOIR OFF",kSection[0]);
+        if((int)value("mode")==2) {      // MIDI Chord mode: show what is being held, bass to soprano
+            juce::String chordText="MIDI CHORD: ";
+            int lastShown=-1;bool any=false;
+            for(int section=3;section>=0;--section) {
+                const int note=processor.chordNote(section);
+                if(note>=0&&note!=lastShown) {chordText+=juce::String(pitchClasses[note%12])+" ";lastShown=note;any=true;}
+            }
+            if(!any)chordText+="HOLD A KEY";
+            chip({r.getCentreX()-100.f,r.getY()+31.f,200.f,18.f},chordText,any?kGold:kMuted);
+        }
         g.setColour(kMuted);g.setFont(boldFont(8.5f));
         g.drawText("INPUT",juce::Rectangle<float>(r.getX()+12.f,r.getBottom()-31.f,60.f,12.f),juce::Justification::left);
         g.setColour(kGold.withAlpha(.22f));g.fillRoundedRectangle(r.getX()+12.f,r.getBottom()-16.f,96.f,4.f,2.f);
@@ -372,6 +431,8 @@ void StageView::paint(juce::Graphics& g) {
     g.setColour(kGold.withAlpha(.38f));g.drawRoundedRectangle(full.reduced(.6f),14.f,1.2f);
 }
 void StageView::mouseDown(const juce::MouseEvent& e) {
+    const int tag=hitPill(e.position);
+    if(tag>=0) {toggleState(tag,e.mods.isPopupMenu()||e.mods.isShiftDown());return;}
     dragging=hit(e.position);
     if(dragging!=-2) {
         micStartX=value("micX");micStartY=value("micY");
@@ -394,10 +455,11 @@ void StageView::mouseDrag(const juce::MouseEvent& e) {
     }
 }
 void StageView::mouseUp(const juce::MouseEvent&) {finishGesture(dragging);dragging=-2;}
-void StageView::mouseMove(const juce::MouseEvent& e) {hover=hit(e.position);}
-void StageView::mouseExit(const juce::MouseEvent&) {hover=-2;}
+void StageView::mouseMove(const juce::MouseEvent& e) {hoverPill=hitPill(e.position);hover=hoverPill>=0?-2:hit(e.position);}
+void StageView::mouseExit(const juce::MouseEvent&) {hover=-2;hoverPill=-2;}
 void StageView::mouseDoubleClick(const juce::MouseEvent& e) {
     // Double-click puts the thing back where it started: to its own default, not to zero.
+    if(hitPill(e.position)>=0) return;   // the name tags take single clicks only
     const int what=hit(e.position);
     if(what==-3) {
         startGesture(-3);resetParameter("leadX");resetParameter("leadY");finishGesture(-3);
@@ -412,43 +474,58 @@ void StageView::mouseDoubleClick(const juce::MouseEvent& e) {
 
 // ================================================================================================ editor
 OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProcessor& p)
-    :AudioProcessorEditor(&p),processor(p),stage(p),meterStrip(p) {
+    :AudioProcessorEditor(&p),processor(p),stage(p),meterStrip(p),roll(p) {
     setLookAndFeel(&lnf);
-    setSize(860,600);setResizable(true,true);setResizeLimits(740,540,1500,1050);
+    {
+        int width=860,height=600;
+        loadWindowSize(width,height);
+        setResizable(true,true);setResizeLimits(800,540,1500,1050);
+        setSize(juce::jlimit(800,1500,width),juce::jlimit(540,1050,height));
+    }
     addAndMakeVisible(stage);addAndMakeVisible(meterStrip);
 
-    // ---- header: scan, stage preset, choir on/off
-    scanButton.setComponentID("action");
-    scanButton.setTooltip("Listens to 4 seconds of your singing and finds the key. Then set PROCESS to Scan / Harmony.");
-    scanButton.onClick=[this] {
-        if(auto* a=processor.parameters.getParameter("mode"))
-            a->setValueNotifyingHost(a->convertTo0to1(1.f));
-        processor.requestScan();
-    };
+    // ---- header: key, scale, style / room, choir on/off
+    {
+        static const char* scaleLabels[]={"NO SCALE","MAJOR","MINOR","HARM. MINOR","DORIAN","MIXOLYDIAN","PENTA MAJOR","PENTA MINOR"};
+        for(int i=0;i<12;++i)keyBox.addItem("KEY "+juce::String(choir::kKeyNames[i]),i+1);
+        for(int i=0;i<choir::kNumScales;++i)scaleBox.addItem(scaleLabels[i],i+1);
+        keyAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.parameters,"keyRoot",keyBox);
+        scaleAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.parameters,"scale",scaleBox);
+        keyBox.setTooltip("The key of your song. With a scale chosen, the choir sings harmony that stays in this key.");
+        scaleBox.setTooltip("The scale of your song. NO SCALE leaves the harmony at fixed intervals (a fifth, a third, a fourth below, an octave below). Nothing is detected: you choose.");
+        addAndMakeVisible(keyBox);addAndMakeVisible(scaleBox);
+    }
     choirButton.setComponentID("power");
     choirButton.setClickingTogglesState(true);
     choirButton.setTooltip("Choir on or off. Your own voice is always heard.");
     choirAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         processor.parameters,"choirOn",choirButton);
-    addAndMakeVisible(scanButton);addAndMakeVisible(choirButton);
+    addAndMakeVisible(choirButton);
     addAndMakeVisible(presetBox);
-    presetBox.setTextWhenNothingSelected("STAGE PRESET");
-    for(int i=0;i<choir::kNumStagePresets;++i)presetBox.addItem(choir::kStagePresets[i].name,i+1);
-    presetBox.setTooltip("Try a room. It moves the singers and sets the space only: harmony, mix, lead level and output are never touched.");
+    presetBox.setTextWhenNothingSelected("STYLE / ROOM");
+    presetBox.setTooltip("A style sets the room, where the singers stand and how they sing, in one click. A room sets only where they stand and the space. MY STYLES are sounds you saved. Your lead level, output and solo/mute are never touched.");
+    rebuildStyleMenu();
     presetBox.onChange=[this] {
-        const int index=presetBox.getSelectedId()-1;
-        if(index>=0)processor.applyStagePreset(index);
+        const int id=presetBox.getSelectedId();
         presetBox.setSelectedId(0,juce::dontSendNotification);
+        handleStyleMenu(id);
     };
+    surpriseButton.setComponentID("action");
+    surpriseButton.setTooltip("A random but musical style: a room, a harmony and a voice character. Your lead level, output and solo/mute are never touched. Press it again for another.");
+    surpriseButton.onClick=[this]{processor.surpriseMe();};
+    modeButton.setTooltip("Switch between Easy (just the big choir controls) and Pro (everything).");
+    modeButton.onClick=[this]{processor.setProUi(!processor.proUi());applyMode();};
+    addAndMakeVisible(surpriseButton);addAndMakeVisible(modeButton);
     statusLabel.setColour(juce::Label::textColourId,kMuted);
     statusLabel.setFont(plainFont(11.f));
     statusLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(statusLabel);
 
     // ---- tabs
-    const char* tabNames[]={"MAIN","ROOM","VOICE","TAKE","STEMS"};
-    const char* tabTips[]={"The controls you reach for","The room, the microphones and the hall","How the singers sound",
-                           "Scan a whole recording and edit its harmony","Mix separately recorded singers"};
+    const char* tabNames[]={"MAIN","ROOM","VOICE","FOLLOW","LISTEN","TAKE","STEMS"};
+    const char* tabTips[]={"The controls you reach for","The room, the microphones and the hall","How the singers sing",
+                           "How the choir follows you: loudness, consonants, tempo","Let the plugin listen to your take, then have the choir sing it",
+                           "Scan a whole recording from a file and edit its harmony","Mix separately recorded singers"};
     for(int i=0;i<numPages;++i) {
         auto& tab=tabs[(size_t)i];
         tab.setButtonText(tabNames[i]);tab.setTooltip(tabTips[i]);tab.setComponentID("tab");
@@ -462,13 +539,18 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
     addFader("TENOR","gain2",kSection[2],"Tenor level. 0 dB is the default.",.83f);
     addFader("BASS","gain3",kSection[3],"Bass level. 0 dB is the default.",.83f);
     addFader("LEAD","leadGain",kLead,"Your own voice, placed on the stage. 0 dB is unity.",1.f);
-    addKnob("CHOIR MIX","mix",pageMain,"Choir against your own voice. 0% is only your voice, 100% is only the choir.",ValueFormat::Percent);
+    addKnob("CHOIR SIZE","choirSize",pageMain,"One knob for how big the choir sounds: tighter, drier and closer below the middle, looser, wetter and wider above it. The detailed knobs keep their own meaning.",ValueFormat::Percent,1.f,true);
+    addKnob("CHOIR MIX","mix",pageMain,"Choir against your own voice. 0% is only your voice, 100% is only the choir. With AUTO LEVEL on, the loudness stays steady as you move it.",ValueFormat::Percent,1.f,true);
     addKnob("ENSEMBLE","ensemble",pageMain,"How far the singers in a section drift apart in tuning: more sounds like a bigger choir.",ValueFormat::Percent);
     addKnob("HUMANIZE","humanize",pageMain,"Timing and pitch differences between singers. More is looser and more human.",ValueFormat::Percent);
     addKnob("SPACE","wet",pageMain,"How much of the room you hear around the choir.",ValueFormat::PercentOfRange);
-    addKnob("OUTPUT","master",pageMain,"Overall output level.",ValueFormat::GainDb,1.f);
-    addChoice("PROCESS","mode",pageMain,"Live follows your singing at once. Scan / Harmony uses the key found by SCAN LIVE INPUT.");
-    addChoice("HARMONY","harmony",pageMain,"The chord colour the singers follow.");
+    addKnob("OUTPUT","master",pageMain,"Overall output level.",ValueFormat::GainDb,1.f,true);
+    addChoice("PROCESS","mode",pageMain,"Live follows your singing at once. Scan / Harmony uses the key found by SCAN LIVE INPUT. MIDI Chord sings the keys you hold (route a MIDI track to this plugin).");
+    addChoice("HARMONY","harmony",pageMain,"The chord colour the singers follow. With a SCALE chosen the scale decides; unison always keeps everyone on your note.",true);
+    listenEasyButton.setComponentID("action");
+    listenEasyButton.setTooltip("Press it, play your vocal through the plugin from the start, press it again. The choir then sings what you sang, in your key.");
+    listenEasyButton.onClick=[this]{listenClicked();};
+    addSide(pageMain,listenEasyButton,false,true);
 
     // ---- ROOM: for when you want to shape the space
     addKnob("ROOM SIZE","roomSize",pageRoom,"Size of the room the choir stands in.",ValueFormat::Percent);
@@ -482,30 +564,60 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
     abButton.setClickingTogglesState(true);
     abButton.setTooltip("Faithful: the full stage model. Classic: the simpler v0.5 stage. Same latency, so switching never shifts timing.");
     abAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.parameters,"classicStage",abButton);
-    irButton.setTooltip("Use a recording of a real room (an impulse response) for the HALL. The HALL knob sets how much you hear.");
+    irButton.setTooltip("Pick one of three built-in rooms (synthetic: cathedral, stone chapel, small hall) or load your own room recording (an impulse response). It is heard through the HALL knob; choosing a room brings the HALL up if it was off.");
     irButton.onClick=[this] {
-        if(!processor.hasImpulseResponse()) {chooseImpulseResponse();return;}
         juce::PopupMenu menu;
-        menu.addItem(1,"Load a different room recording...");
-        menu.addItem(2,"Remove it (back to the built-in hall)");
+        for(int room=0;room<OmniChoirAudioProcessor::kNumBuiltInRooms;++room)
+            menu.addItem(1+room,juce::String(OmniChoirAudioProcessor::builtInRoomName(room))+" (built in)",true,
+                         processor.hasImpulseResponse() && processor.impulseResponseName()==OmniChoirAudioProcessor::builtInRoomName(room));
+        menu.addItem(10,"Load your own room recording...");
+        if(processor.hasImpulseResponse())menu.addItem(11,"Remove it (back to the built-in hall)");
         juce::Component::SafePointer<OmniChoirAudioProcessorEditor> safe(this);
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&irButton),[safe](int result) {
             if(safe==nullptr)return;
-            if(result==1)safe->chooseImpulseResponse();
-            else if(result==2)safe->processor.clearImpulseResponse();
+            if(result>=1 && result<=OmniChoirAudioProcessor::kNumBuiltInRooms)safe->processor.chooseBuiltInRoom(result-1);
+            else if(result==10)safe->chooseImpulseResponse();
+            else if(result==11)safe->processor.clearImpulseResponse();
         });
     };
     addSide(pageRoom,abButton);addSide(pageRoom,irButton);
 
     // ---- VOICE: how the singers sound
-    addKnob("CHOIR LEVEL","choirLevel",pageVoice,"The choir against your voice, in dB. Works with CHOIR MIX.",ValueFormat::Db);
     addKnob("CHARACTER","formant",pageVoice,"Keeps each singer's vowel colour natural when the pitch moves.",ValueFormat::Percent);
-    addKnob("SENSITIVITY","sensitivity",pageVoice,"How quiet a sound can be and still start the choir. Raise it for soft singing, lower it for a noisy input.",ValueFormat::Percent);
     addKnob("VOICE BLEND","voiceBlend",pageVoice,"Mixes in synthesised singers that follow your voice.",ValueFormat::Percent);
     addKnob("VOWEL","choirVowel",pageVoice,"The vowel the synthesised singers sing.",ValueFormat::Percent);
     addKnob("FOLLOW LEAD","vowelFollow",pageVoice,"How closely the synthesised singers copy your vowel.",ValueFormat::Percent);
     addKnob("BREATH","choirBreath",pageVoice,"Breathiness of the synthesised singers.",ValueFormat::Percent);
     addKnob("VIBRATO","vibrato",pageVoice,"Vibrato of the synthesised singers.",ValueFormat::Percent);
+
+    autoLevelButton.setClickingTogglesState(true);
+    autoLevelButton.setTooltip("Keeps the loudness steady as CHOIR MIX moves, so turning the choir up never makes the plugin quieter. Off gives the raw mix, as in versions before 0.7. (Faithful engine only.)");
+    autoLevelAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.parameters,"levelMatch",autoLevelButton);
+    addKnob("CHOIR LEVEL","choirLevel",pageFollow,"The choir against your voice, in dB. Works with CHOIR MIX.",ValueFormat::Db);
+    addKnob("SENSITIVITY","sensitivity",pageFollow,"How quiet a sound can be and still start the choir. Raise it for soft singing, lower it for a noisy input.",ValueFormat::Percent);
+    addKnob("CONSONANTS","consonants",pageFollow,"Your own s, t and k pass through cleanly instead of being smeared by sixteen singers. The choir sings the vowels. 0% is off.",ValueFormat::Percent);
+    addKnob("SWELL","swell",pageFollow,"The choir blooms when you sing louder than your own average and recedes when you sing softer. 0% follows your level one to one.",ValueFormat::Percent);
+    addKnob("PULSE DEPTH","pulseDepth",pageFollow,"How far the choir breathes down on each pulse. Needs PULSE RATE set to something other than Off.",ValueFormat::Percent);
+    addChoice("PULSE RATE","pulseRate",pageFollow,"The choir breathes in time with the song: once per 2 bars, 1 bar, half a bar, a beat or half a beat. Follows your DAW's tempo and position.");
+    addSide(pageFollow,autoLevelButton);
+
+    // ---- LISTEN: capture a take, see its notes, edit them, and let the choir sing them
+    for(auto* b:{&listenButton,&clearListenButton}) {b->setComponentID("action");addAndMakeVisible(*b);}
+    addAndMakeVisible(roll);
+    listenButton.setTooltip("Press it, then play your vocal through the plugin from the start. Press STOP when the take is over. The choir will then sing what you sang, lined up with your DAW's play position.");
+    listenButton.onClick=[this]{listenClicked();};
+    clearListenButton.setTooltip("Forget this take.");
+    clearListenButton.onClick=[this]{processor.clearListening();roll.clearSelection();};
+    for(int i=0;i<8;++i) {
+        auto& b=listenAdjust[(size_t)i];
+        b.setButtonText(juce::String::charToString((juce::juce_wchar)"SATB"[i/2])+(i%2?"+":"-"));
+        b.setTooltip("Move the selected note's part up or down one semitone. Click a note in the piano roll first.");
+        b.onClick=[this,i] {
+            if(roll.selected()>=0) processor.listenSession().transpose((size_t)roll.selected(),i/2,i%2?1:-1);
+            roll.repaint();
+        };
+        addAndMakeVisible(b);
+    }
 
     // ---- TAKE and STEMS
     for(auto* b:{&importButton,&exportButton,&midiButton,&loadStemsButton,&mixStemsButton}) {
@@ -540,38 +652,48 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
         };
         addAndMakeVisible(adjust[(size_t)i]);
     }
-    selectTab(pageMain);
+    applyMode();
+    if(!settingsFolder().getChildFile("tour-done").existsAsFile()) startTour();   // the first time this user opens the plugin
     startTimerHz(10);
 }
 OmniChoirAudioProcessorEditor::~OmniChoirAudioProcessorEditor() {
-    stopTimer();chooser.reset();
+    stopTimer();chooser.reset();tour.reset();
     setLookAndFeel(nullptr);
 }
-void OmniChoirAudioProcessorEditor::addKnob(const juce::String& title,const juce::String& id,int page,const juce::String& tip,ValueFormat format,float unity) {
+void OmniChoirAudioProcessorEditor::addKnob(const juce::String& title,const juce::String& id,int page,const juce::String& tip,ValueFormat format,float unity,bool easy) {
     auto c=std::make_unique<Dial>(processor,title,id,tip,format,unity);
     addAndMakeVisible(*c);
-    slots.push_back({page,Kind::Knob,c.get()});
+    slots.push_back({page,Kind::Knob,c.get(),easy});
     owned.push_back(std::move(c));
 }
 void OmniChoirAudioProcessorEditor::addFader(const juce::String& title,const juce::String& id,juce::Colour accent,const juce::String& tip,float unity) {
     auto c=std::make_unique<Fader>(processor,title,id,accent,tip,unity);
     addAndMakeVisible(*c);
-    slots.push_back({pageMain,Kind::Fader,c.get()});
+    slots.push_back({pageMain,Kind::Fader,c.get(),false});
     owned.push_back(std::move(c));
 }
-void OmniChoirAudioProcessorEditor::addChoice(const juce::String& title,const juce::String& id,int page,const juce::String& tip) {
+void OmniChoirAudioProcessorEditor::addChoice(const juce::String& title,const juce::String& id,int page,const juce::String& tip,bool easy) {
     auto c=std::make_unique<Choice>(processor,title,id,tip);
     addAndMakeVisible(*c);
-    slots.push_back({page,Kind::Side,c.get()});
+    slots.push_back({page,Kind::Side,c.get(),easy});
     owned.push_back(std::move(c));
 }
-void OmniChoirAudioProcessorEditor::addSide(int page,juce::Component& item) {
+void OmniChoirAudioProcessorEditor::addSide(int page,juce::Component& item,bool easy,bool easyOnly) {
     addAndMakeVisible(item);
-    slots.push_back({page,Kind::Side,&item});
+    slots.push_back({page,Kind::Side,&item,easy,easyOnly});
+}
+void OmniChoirAudioProcessorEditor::applyMode() {
+    pro=processor.proUi();
+    for(auto& tab:tabs)tab.setVisible(pro);
+    modeButton.setButtonText(pro?"EASY":"PRO");
+    selectTab(pro?currentTab:(int)pageMain);
 }
 void OmniChoirAudioProcessorEditor::selectTab(int page) {
     currentTab=page;
-    for(auto& s:slots)s.item->setVisible(s.page==page);
+    for(auto& s:slots)s.item->setVisible(s.page==page && (pro?!s.easyOnly:(s.easy||s.easyOnly)));
+    const bool listenPage=page==pageListen;
+    roll.setVisible(listenPage);listenButton.setVisible(listenPage);clearListenButton.setVisible(listenPage);
+    for(auto& b:listenAdjust)b.setVisible(listenPage);
     const bool takePage=page==pageTake,stemsPage=page==pageStems;
     importButton.setVisible(takePage);exportButton.setVisible(takePage);midiButton.setVisible(takePage);
     notes.setVisible(takePage);takeStatus.setVisible(takePage);
@@ -653,6 +775,236 @@ void OmniChoirAudioProcessorEditor::chooseStemOutput() {
                                         safe->processor.snapshotParams());
         });
 }
+// ============================================================================================ piano roll
+PianoRoll::PianoRoll(OmniChoirAudioProcessor& p):processor(p) {
+    setTooltip("The notes you sang (white) and the four parts the choir sings (coloured). Click a note to select it, then use the buttons on the right to move a part by a semitone. The wheel scrolls.");
+}
+double PianoRoll::timeAt(float x) const {return viewStart+(double)x/std::max(1,getWidth())*viewSpan;}
+float PianoRoll::xAt(double t) const {return (float)((t-viewStart)/viewSpan*getWidth());}
+void PianoRoll::refresh() {
+    const double playhead=processor.listenPlayhead();
+    if(playhead>=0 && (playhead<viewStart || playhead>viewStart+viewSpan*.92)) viewStart=std::max(0.0,playhead-viewSpan*.1);
+    repaint();
+}
+void PianoRoll::mouseDown(const juce::MouseEvent& e) {
+    const auto* score=processor.listenSession().score();
+    if(score==nullptr) {selectedNote=-1;return;}
+    selectedNote=choir::findNoteIndex(*score,timeAt(e.position.x),.05);
+    repaint();
+}
+void PianoRoll::mouseWheelMove(const juce::MouseEvent&,const juce::MouseWheelDetails& wheel) {
+    const auto* score=processor.listenSession().score();
+    const double duration=score!=nullptr&&!score->notes.empty()?score->notes.back().end+1.0:viewSpan;
+    viewStart=juce::jlimit(0.0,std::max(0.0,duration-viewSpan),viewStart-(double)wheel.deltaY*viewSpan*.5);
+    repaint();
+}
+void PianoRoll::paint(juce::Graphics& g) {
+    const auto area=getLocalBounds().toFloat();
+    g.setColour(juce::Colour(0xff0e090c));g.fillRoundedRectangle(area,8.f);
+    g.setColour(kStroke);g.drawRoundedRectangle(area.reduced(.5f),8.f,1.f);
+    const auto& session=processor.listenSession();
+    const auto state=session.state();
+    const auto message=[&](const juce::String& text,juce::Colour colour) {
+        g.setColour(colour);g.setFont(boldFont(11.f));
+        g.drawFittedText(text,getLocalBounds().reduced(14,6),juce::Justification::centred,3);
+    };
+    if(state==choir::ListenSession::Listening) {
+        const float pulse=.5f+.5f*std::sin((float)(juce::Time::getMillisecondCounterHiRes()*.006));
+        g.setColour(juce::Colour(0xffe0485a).withAlpha(.5f+.5f*pulse));g.fillEllipse(area.getCentreX()-60.f,area.getCentreY()-26.f,10.f,10.f);
+        message("LISTENING  "+juce::String(session.capturedSeconds(),1)+" s\nPlay your take through the plugin from the start, then press STOP.",kCream);
+        return;
+    }
+    if(state==choir::ListenSession::Analysing) {message("ANALYSING YOUR TAKE...",kGold);return;}
+    const auto* score=session.score();
+    if(score==nullptr || score->notes.empty()) {
+        message(state==choir::ListenSession::Ready?"No notes were heard. Try again with a clean, solo vocal.":
+                "Press LISTEN, then play your vocal through the plugin from the start. The notes appear here and the choir will sing them.",kMuted);
+        return;
+    }
+    int low=200,high=0;
+    for(const auto& n:score->notes) {
+        low=std::min(low,std::min(n.melody,*std::min_element(n.satb.begin(),n.satb.end())));
+        high=std::max(high,std::max(n.melody,*std::max_element(n.satb.begin(),n.satb.end())));
+    }
+    low-=1;high+=1;
+    if(high-low<20) {const int grow=(20-(high-low))/2+1;low-=grow;high+=grow;}
+    const float rowHeight=area.getHeight()/(float)(high-low+1);
+    const auto yOf=[&](int midi) {return area.getBottom()-(float)(midi-low+1)*rowHeight;};
+    const int scale=(int)processor.parameters.getRawParameterValue("scale")->load(),root=(int)processor.parameters.getRawParameterValue("keyRoot")->load();
+    for(int midi=low;midi<=high;++midi) {      // rows: out-of-scale rows are darker; every C is marked
+        const bool inKey=scale==0||choir::inScale(midi,root,scale);
+        g.setColour(inKey?juce::Colour(0x14ffffff):juce::Colour(0x00000000));
+        if(inKey)g.fillRect(0.f,yOf(midi),area.getWidth(),rowHeight);
+        if(midi%12==0) {
+            g.setColour(kMuted.withAlpha(.5f));g.drawLine(0.f,yOf(midi)+rowHeight,area.getWidth(),yOf(midi)+rowHeight,.6f);
+            g.setFont(plainFont(8.5f));g.drawText("C"+juce::String(midi/12-1),3,(int)yOf(midi),22,(int)std::max(10.f,rowHeight),juce::Justification::centredLeft);
+        }
+    }
+    const int first=std::max(0,choir::findNoteIndex(*score,viewStart));
+    for(int i=first;i<(int)score->notes.size();++i) {
+        const auto& n=score->notes[(size_t)i];
+        if(n.start>viewStart+viewSpan) break;
+        const float x0=xAt(n.start),x1=std::max(x0+2.f,xAt(n.end));
+        if(x1<0.f) continue;
+        for(int part=0;part<4;++part) {      // the four parts the choir sings
+            g.setColour(kSection[(size_t)part].withAlpha(.85f));
+            g.fillRoundedRectangle(x0,yOf(n.satb[(size_t)part])+rowHeight*.2f,x1-x0,rowHeight*.55f,2.f);
+        }
+        g.setColour(kLead.withAlpha(.95f));      // what you sang, on top
+        g.fillRoundedRectangle(x0,yOf(n.melody)+rowHeight*.08f,x1-x0,rowHeight*.84f,2.5f);
+        if(i==selectedNote) {g.setColour(kGold);g.drawRoundedRectangle(x0-1.f,yOf(n.melody)-1.f,x1-x0+2.f,rowHeight+2.f,3.f,1.6f);}
+    }
+    const double playhead=processor.listenPlayhead();
+    if(playhead>=0) {g.setColour(kGold);const float x=xAt(playhead);g.drawLine(x,0.f,x,area.getBottom(),1.6f);}
+}
+
+// ================================================================================================ tour
+TourOverlay::TourOverlay(std::vector<Step> s,std::function<void()> onFinished):steps(std::move(s)),finished(std::move(onFinished)) {
+    addAndMakeVisible(next);addAndMakeVisible(skip);
+    next.setComponentID("action");skip.setComponentID("action");
+    next.onClick=[this] {
+        if(++index>=steps.size()) {if(finished)finished();return;}
+        next.setButtonText(index+1==steps.size()?"DONE":"NEXT");
+        resized();repaint();
+    };
+    skip.onClick=[this]{if(finished)finished();};
+    if(steps.size()==1) next.setButtonText("DONE");
+}
+juce::Rectangle<int> TourOverlay::targetBounds() const {
+    if(index>=steps.size()) return {};
+    auto r=steps[index].target->getBounds();
+    if(steps[index].alsoTarget!=nullptr) r=r.getUnion(steps[index].alsoTarget->getBounds());
+    return r.expanded(6);
+}
+juce::Rectangle<int> TourOverlay::bubbleBounds() const {
+    const auto target=targetBounds();
+    const int width=juce::jmin(330,getWidth()-24),height=122;
+    const bool below=target.getBottom()+height+14<getHeight();
+    const int y=below?target.getBottom()+10:juce::jmax(8,target.getY()-height-10);
+    const int x=juce::jlimit(12,juce::jmax(12,getWidth()-width-12),target.getCentreX()-width/2);
+    return {x,y,width,height};
+}
+void TourOverlay::resized() {
+    const auto bubble=bubbleBounds();
+    next.setBounds(bubble.getRight()-82,bubble.getBottom()-36,72,26);
+    skip.setBounds(bubble.getRight()-160,bubble.getBottom()-36,72,26);
+}
+void TourOverlay::paint(juce::Graphics& g) {
+    if(index>=steps.size()) return;
+    const auto target=targetBounds().toFloat();
+    juce::Path dim;
+    dim.addRectangle(getLocalBounds().toFloat());
+    dim.addRoundedRectangle(target,10.f);
+    dim.setUsingNonZeroWinding(false);          // the target is a hole in the dimming
+    g.setColour(juce::Colours::black.withAlpha(.74f));g.fillPath(dim);
+    g.setColour(kGold);g.drawRoundedRectangle(target,10.f,2.f);
+    const auto bubble=bubbleBounds().toFloat();
+    g.setColour(kPanel);g.fillRoundedRectangle(bubble,12.f);
+    g.setColour(kGold);g.drawRoundedRectangle(bubble.reduced(.5f),12.f,1.4f);
+    g.setFont(boldFont(13.f));g.drawText(steps[index].title,bubble.reduced(14.f,8.f).withHeight(20.f),juce::Justification::centredLeft);
+    g.setColour(kCream);g.setFont(plainFont(12.f));
+    g.drawFittedText(steps[index].text,bubble.toNearestInt().reduced(14,0).withTrimmedTop(32).withTrimmedBottom(42),juce::Justification::topLeft,4);
+    g.setColour(kMuted);g.setFont(boldFont(9.5f));
+    g.drawText(juce::String((int)index+1)+" / "+juce::String((int)steps.size()),bubble.reduced(14.f,0.f).withTrimmedTop(bubble.getHeight()-34.f).withHeight(26.f),juce::Justification::centredLeft);
+}
+
+// ============================================================================================== listen, styles, tour
+void OmniChoirAudioProcessorEditor::listenClicked() {
+    auto& session=processor.listenSession();
+    if(session.state()==choir::ListenSession::Listening) processor.stopListening();
+    else if(session.state()!=choir::ListenSession::Analysing) processor.startListening();
+}
+void OmniChoirAudioProcessorEditor::rebuildStyleMenu() {
+    presetBox.clear(juce::dontSendNotification);
+    presetBox.addSectionHeading("STYLES: a whole sound");
+    for(int i=0;i<choir::kNumStylePresets;++i)presetBox.addItem(choir::kStylePresets[i].name,1+i);
+    styleFiles.clear();
+    for(const auto& file:processor.userStyleFiles()) if(styleFiles.size()<80) styleFiles.push_back(file);
+    if(!styleFiles.empty()) {
+        presetBox.addSeparator();
+        presetBox.addSectionHeading("MY STYLES");
+        for(size_t i=0;i<styleFiles.size();++i)presetBox.addItem(styleFiles[i].getFileNameWithoutExtension(),300+(int)i);
+    }
+    presetBox.addSeparator();
+    presetBox.addSectionHeading("ROOMS: where they stand");
+    for(int i=0;i<choir::kNumStagePresets;++i)presetBox.addItem(choir::kStagePresets[i].name,100+i);
+    presetBox.addSeparator();
+    presetBox.addItem("Save this sound as a style...",900);
+    presetBox.addItem("Load a style file...",901);
+    presetBox.addItem("Open my styles folder",902);
+    presetBox.addItem("Show the tour",903);
+}
+void OmniChoirAudioProcessorEditor::handleStyleMenu(int id) {
+    if(id>=300 && id<900) {
+        const size_t index=(size_t)(id-300);
+        if(index<styleFiles.size()) processor.loadStyleFile(styleFiles[index]);
+        return;
+    }
+    if(id>=100 && id<300) {processor.applyStagePreset(id-100);return;}
+    if(id>=1 && id<100) {processor.applyStyle(id-1);return;}
+    juce::Component::SafePointer<OmniChoirAudioProcessorEditor> safe(this);
+    if(id==900) {
+        chooser=std::make_unique<juce::FileChooser>("Save this sound as a style",OmniChoirAudioProcessor::userStyleFolder().getChildFile("My style.omnistyle"),"*.omnistyle");
+        chooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,
+            [safe](const juce::FileChooser& fc) {
+                if(safe==nullptr) return;
+                const auto file=fc.getResult();
+                if(file==juce::File()) return;
+                safe->processor.saveStyleFile(file.withFileExtension("omnistyle"));
+                safe->rebuildStyleMenu();
+            });
+    } else if(id==901) {
+        chooser=std::make_unique<juce::FileChooser>("Load a style file",OmniChoirAudioProcessor::userStyleFolder(),"*.omnistyle");
+        chooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,
+            [safe](const juce::FileChooser& fc) {
+                if(safe==nullptr) return;
+                const auto file=fc.getResult();
+                if(file==juce::File()) return;
+                if(safe->processor.loadStyleFile(file)) {
+                    const auto folder=OmniChoirAudioProcessor::userStyleFolder();
+                    if(!file.isAChildOf(folder)) file.copyFileTo(folder.getChildFile(file.getFileName()));   // keep a copy among MY STYLES
+                    safe->rebuildStyleMenu();
+                }
+            });
+    } else if(id==902) {
+        OmniChoirAudioProcessor::userStyleFolder().revealToUser();
+    } else if(id==903) {
+        startTour();
+    }
+}
+void OmniChoirAudioProcessorEditor::startTour() {
+    if(tour!=nullptr) return;
+    std::vector<TourOverlay::Step> steps;
+    const auto add=[&](juce::Component* target,juce::Component* also,const char* title,const char* text) {
+        if(target!=nullptr && target->isVisible()) steps.push_back({target,also,title,text});
+    };
+    add(&stage,nullptr,"YOUR CHOIR","Drag the four sections, your lead voice and the microphone around the stage. Click a section's name to solo it, right-click to mute it.");
+    add(&presetBox,nullptr,"STYLES AND ROOMS","Pick a style for a whole sound in one click, or a room for just the space. You can save your own sounds here too.");
+    add(&scaleBox,&keyBox,"YOUR KEY","Choose your song's key and scale and the choir's harmony stays in key. Leave it on NO SCALE for fixed intervals. Nothing is detected: you choose.");
+    for(auto& slot:slots) if(slot.kind==Kind::Knob && slot.page==pageMain && slot.item->isVisible()) {
+        add(slot.item,nullptr,"HOW BIG","One knob for how big the choir sounds. The knobs next to it set how much choir you hear.");
+        break;
+    }
+    add(&listenEasyButton,nullptr,"LISTEN, THEN CHOIR","Press LISTEN, play your vocal through the plugin from the start, then press it again. The plugin works out your notes and the choir sings them.");
+    add(&modeButton,&surpriseButton,"EASY OR PRO","Easy shows just the big controls. Pro shows everything. SURPRISE ME picks a random musical style.");
+    if(steps.empty()) return;
+    tour=std::make_unique<TourOverlay>(std::move(steps),[this]{finishTour();});
+    addAndMakeVisible(*tour);
+    tour->setBounds(getLocalBounds());
+    tour->toFront(false);
+}
+void OmniChoirAudioProcessorEditor::finishTour() {
+    const auto flag=settingsFolder().getChildFile("tour-done");
+    flag.getParentDirectory().createDirectory();
+    flag.create();                       // seen once: it does not come back by itself
+    juce::Component::SafePointer<OmniChoirAudioProcessorEditor> safe(this);
+    juce::MessageManager::callAsync([safe]{ if(safe!=nullptr) safe->tour.reset(); });   // not from inside the overlay's own button
+}
+void OmniChoirAudioProcessorEditor::saveWindowSize() {
+    const auto folder=settingsFolder();
+    folder.createDirectory();
+    folder.getChildFile("window-size.txt").replaceWithText(juce::String(getWidth())+" "+juce::String(getHeight()));
+}
 void OmniChoirAudioProcessorEditor::paintListBoxItem(int index,juce::Graphics& g,int width,int height,bool selected) {
     if(index<0||index>=(int)visibleScore.notes.size())return;
     const auto& e=visibleScore.notes[(size_t)index];
@@ -670,16 +1022,49 @@ void OmniChoirAudioProcessorEditor::paintListBoxItem(int index,juce::Graphics& g
     }
 }
 void OmniChoirAudioProcessorEditor::timerCallback() {
-    juce::String msg;
-    switch(processor.scanStatus()) {
-        case 1:msg="Listening for your key... "+juce::String((int)(processor.scanProgress()*100.f))+"%";break;
-        case 2:msg="Key found: "+juce::String(pitchClasses[processor.scanRoot()%12])+". Set PROCESS to Scan / Harmony to use it.";break;
-        case 3:msg="No clear pitch heard. Try again with a clean, solo vocal.";break;
-        default:msg="Drag the singers, your lead and the mic on the stage. Double-click one to put it back.";break;
+    juce::String msg="Drag the singers, your lead and the mic on the stage. Double-click one to put it back.";
+    // ---- LISTEN: the take is captured, analysed and then sung
+    auto& session=processor.listenSession();
+    const int listenState=(int)session.state();
+    if(listenState==(int)choir::ListenSession::Listening && session.isFull()) processor.stopListening();   // the buffer is full: stop and analyse
+    if(lastListenState==(int)choir::ListenSession::Analysing && listenState==(int)choir::ListenSession::Ready) {
+        processor.setMode(1);                 // the take is ready: the choir now sings it
+        roll.clearSelection();
     }
+    lastListenState=listenState;
+    {   // changing the key, scale or harmony re-voices the take, unless you have edited notes by hand
+        const auto read=[this](const char* id) {return (int)processor.parameters.getRawParameterValue(id)->load();};
+        const int key=read("keyRoot"),scale=read("scale"),harmony=read("harmony");
+        if((key!=lastKey||scale!=lastScale||harmony!=lastHarmony) && lastKey>=0) session.revoice(key,scale,harmony);
+        lastKey=key;lastScale=scale;lastHarmony=harmony;
+        keyBox.setEnabled(scale>0);
+    }
+    switch(session.state()) {
+        case choir::ListenSession::Listening:msg="LISTENING: play your take through the plugin from the start, then press STOP.   "+juce::String(session.capturedSeconds(),1)+" s";break;
+        case choir::ListenSession::Analysing:msg="Analysing your take...";break;
+        case choir::ListenSession::Ready:
+            if(session.score()!=nullptr)
+                msg=juce::String((int)session.score()->notes.size())+" notes heard. PROCESS is set to Listen: play the take back from where you started."+
+                    (session.hostPositionKnown()?juce::String():juce::String("  Your DAW does not report its play position, so the choir cannot line up with the take."));
+            break;
+        default:break;
+    }
+    {
+        const bool busy=session.state()==choir::ListenSession::Analysing;
+        const juce::String text=session.state()==choir::ListenSession::Listening?"STOP":(session.state()==choir::ListenSession::Analysing?"ANALYSING...":(session.state()==choir::ListenSession::Ready?"LISTEN AGAIN":"LISTEN"));
+        listenButton.setButtonText(text);listenEasyButton.setButtonText(text);
+        listenButton.setEnabled(!busy);listenEasyButton.setEnabled(!busy);
+        clearListenButton.setEnabled(session.state()==choir::ListenSession::Ready);
+        const bool ready=session.state()==choir::ListenSession::Ready&&roll.selected()>=0;
+        for(auto& b:listenAdjust)b.setEnabled(ready);
+        roll.refresh();
+    }
+    // ---- the window size you like is remembered (written once it has stopped changing)
+    if(sizeDirty && ++sizeTicks>=10) {saveWindowSize();sizeDirty=false;}
     choirButton.setButtonText(choirButton.getToggleState()?"CHOIR ON":"CHOIR OFF");
     abButton.setButtonText(abButton.getToggleState()?"ENGINE: CLASSIC":"ENGINE: FAITHFUL");
-    irButton.setButtonText(processor.hasImpulseResponse()?"ROOM: "+processor.impulseResponseName().toUpperCase().substring(0,12):juce::String("LOAD ROOM IR"));
+    autoLevelButton.setButtonText(autoLevelButton.getToggleState()?"AUTO LEVEL: ON":"AUTO LEVEL: OFF");
+    irButton.setButtonText(processor.hasImpulseResponse()?"ROOM: "+processor.impulseResponseName().toUpperCase().substring(0,12):juce::String("ROOMS / LOAD IR"));
     const int status=take.status();
     if(status!=lastTakeStatus && status!=1 &&status!=3 && status!=5 && status!=7) {
         visibleScore=take.snapshot();notes.updateContent();
@@ -724,18 +1109,18 @@ void OmniChoirAudioProcessorEditor::paint(juce::Graphics& g) {
 void OmniChoirAudioProcessorEditor::layoutPage(int page,juce::Rectangle<int> area) {
     std::vector<juce::Component*> knobs,faders,sides;
     for(auto& s:slots) {
-        if(s.page!=page)continue;
+        if(s.page!=page || !(pro?!s.easyOnly:(s.easy||s.easyOnly)))continue;
         auto& list=s.kind==Kind::Knob?knobs:(s.kind==Kind::Fader?faders:sides);
         list.push_back(s.item);
     }
     if(!faders.empty()) {
-        const int faderWidth=50;
+        const int faderWidth=46;
         auto strip=area.removeFromLeft((int)faders.size()*faderWidth);
         for(auto* f:faders)f->setBounds(strip.removeFromLeft(faderWidth));
         area.removeFromLeft(14);
     }
     if(!sides.empty()) {
-        auto column=area.removeFromRight(172);
+        auto column=area.removeFromRight(156);
         area.removeFromRight(12);
         // a labelled dropdown needs 46 px, a button 28 px; stack them, centred in the column
         const auto heightOf=[](juce::Component* c) {return dynamic_cast<juce::Button*>(c)!=nullptr?28:46;};
@@ -749,11 +1134,14 @@ void OmniChoirAudioProcessorEditor::layoutPage(int page,juce::Rectangle<int> are
         }
     }
     if(!knobs.empty()) {
-        const int cellWidth=juce::jmin(112,area.getWidth()/(int)knobs.size());
+        const int cellWidth=juce::jmin(pro?112:170,area.getWidth()/(int)knobs.size());
+        if(!pro)area.removeFromLeft((area.getWidth()-cellWidth*(int)knobs.size())/2);   // Easy: a few big knobs, centred
         for(auto* k:knobs)k->setBounds(area.removeFromLeft(cellWidth));
     }
 }
 void OmniChoirAudioProcessorEditor::resized() {
+    sizeDirty=true;sizeTicks=0;
+    if(tour!=nullptr) tour->setBounds(getLocalBounds());
     const int w=getWidth(),h=getHeight(),m=14,headerHeight=62,footerHeight=26,tabsHeight=30;
     const int controlsHeight=juce::jlimit(122,170,(int)((float)h*.215f));
 
@@ -762,15 +1150,21 @@ void OmniChoirAudioProcessorEditor::resized() {
     header.removeFromRight(8);
     presetBox.setBounds(header.removeFromRight(160).withSizeKeepingCentre(160,30));
     header.removeFromRight(8);
-    scanButton.setBounds(header.removeFromRight(156).withSizeKeepingCentre(156,32));
+    scaleBox.setBounds(header.removeFromRight(124).withSizeKeepingCentre(124,30));
+    header.removeFromRight(6);
+    keyBox.setBounds(header.removeFromRight(78).withSizeKeepingCentre(78,30));
 
     const int footerTop=h-footerHeight-6;
     const int controlsTop=footerTop-6-controlsHeight;
     const int tabsTop=controlsTop-tabsHeight-6;
     const int stageTop=headerHeight+4;
     stage.setBounds(m,stageTop,w-2*m,juce::jmax(60,tabsTop-6-stageTop));
-    const int tabWidth=juce::jmin(118,(w-2*m)/numPages-4);
-    for(int i=0;i<numPages;++i)tabs[(size_t)i].setBounds(m+i*(tabWidth+4),tabsTop,tabWidth,tabsHeight);
+    const int tabWidth=juce::jmin(92,(w-2*m-172)/numPages-3);
+    for(int i=0;i<numPages;++i)tabs[(size_t)i].setBounds(m+i*(tabWidth+3),tabsTop,tabWidth,tabsHeight);
+    auto tabRow=juce::Rectangle<int>(m,tabsTop,w-2*m,tabsHeight);
+    modeButton.setBounds(tabRow.removeFromRight(64).reduced(0,1));
+    tabRow.removeFromRight(4);
+    surpriseButton.setBounds(tabRow.removeFromRight(112).reduced(0,1));
     deckBounds=juce::Rectangle<int>(m,controlsTop,w-2*m,controlsHeight);
     auto footer=juce::Rectangle<int>(m,footerTop,w-2*m,footerHeight);
     meterStrip.setBounds(footer.removeFromRight(juce::jmin(330,footer.getWidth()/2)));
@@ -778,7 +1172,13 @@ void OmniChoirAudioProcessorEditor::resized() {
     statusLabel.setBounds(footer);
 
     const auto inner=deckBounds.reduced(14,8);
-    for(const int page:{(int)pageMain,(int)pageRoom,(int)pageVoice})layoutPage(page,inner);
+    for(const int page:{(int)pageMain,(int)pageRoom,(int)pageVoice,(int)pageFollow})layoutPage(page,inner);
+    // LISTEN
+    listenButton.setBounds(inner.getX(),inner.getY(),136,30);
+    clearListenButton.setBounds(inner.getX(),inner.getY()+36,136,26);
+    roll.setBounds(inner.getX()+148,inner.getY(),juce::jmax(40,inner.getWidth()-148-126),inner.getHeight());
+    for(int i=0;i<8;++i)
+        listenAdjust[(size_t)i].setBounds(inner.getRight()-116+(i%2)*58,inner.getY()+(i/2)*25,56,23);
     // TAKE
     importButton.setBounds(inner.getX(),inner.getY(),140,28);
     exportButton.setBounds(inner.getX(),inner.getY()+32,140,28);

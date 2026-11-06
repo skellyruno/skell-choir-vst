@@ -1,6 +1,7 @@
 #pragma once
 #include "ChoirDSP.h"
 #include "FormantChoir.h"
+#include "Scales.h"
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -11,7 +12,7 @@ namespace choir {
 // are shared with the supplied OmniChoir demo's physical stage concept.
 struct FXParams : Params {
     bool choirOn = true;             // button bypasses wet choir return
-    int mode = 0;                  // 0 Live, 1 Scan/Harmony
+    int mode = 0;                  // 0 Live, 1 Scan/Harmony, 2 MIDI chord (the choir sings the notes you hold, from your voice)
     int harmony = 0;               // 0 Major, 1 Minor, 2 Unison (ensemble)
     float mix = 0.78f;             // blend of choir vs. original input
     float sensitivity = 0.65f;     // voice gate sensitivity
@@ -27,6 +28,16 @@ struct FXParams : Params {
     float choirBreath = .5f;         // breath at phrase starts and a little air through the tone (distinct from Params::breath)
     float vibrato = .6f;             // vibrato depth of the synthesised singers
     bool classicStage = false;       // A/B: the v0.5 simplified stage instead of the faithful one
+    float consonants = 0.f;          // v0.8, 0..1: how much of your own consonants (s, t, k...) pass through cleanly instead of being sung by the choir
+    float swell = 0.f;               // v0.8, 0..1: the choir blooms when you sing louder than your own average and recedes when softer (faithful stage only)
+    int pulseRate = 0;               // v0.8: tempo-synced breathing. 0 off, 1 two bars, 2 one bar, 3 half a bar, 4 one beat, 5 half a beat
+    float pulseDepth = .5f;          // 0..1, how far the choir breathes down
+    double ppq = -1.0;               // v0.8: the host's position in quarter notes at the start of this block (-1 = unknown)
+    double bpm = 0.0;                // v0.8: the host tempo (0 = unknown, 120 is assumed)
+    int keyRoot = 0;                 // v0.8: the key you choose, 0 = C .. 11 = B (nothing is detected)
+    int scale = 0;                   // v0.8: index into kScales; 0 = Chromatic = off, the fixed v0.7 intervals
+    bool levelMatch = false;         // v0.7: keep the output loudness steady as CHOIR MIX moves (faithful stage only)
+    std::array<int,4> midiNotes {{-1,-1,-1,-1}};   // v0.7, mode 2: the MIDI note each section sings (soprano..bass), -1 = no note held
     float choirLevelDb = 0.f;        // v0.6.1: choir level in dB, -12..+12, faithful stage only (the classic stage stays bit-identical to v0.5)
 };
 
@@ -53,6 +64,7 @@ private:
     int hopSamples = 128, half = 512, minLag = 16, maxLag = 246, holdHops = 20;
     float accumulator = 0.f, rate = 16000.f, level = 0.f, currentMidi = -1.f, conf = 0.f;
     int missed = 0;
+    float pendingMidi = -1.f; int pendingCount = 0, steady = 0;   // a big leap is believed only once it has stayed put (see analyse)
     bool analyse();
 };
 
@@ -99,6 +111,7 @@ public:
     int scanRoot() const { return rootPC; }
     float detectedMidi() const { return tracker.midi(); }
     float inputRms() const { return tracker.rms(); }
+    float pitchConfidence() const { return tracker.confidence(); }   // 0..1, how clearly the lead is singing a pitch right now
 private:
     static constexpr int singers = voicesPerSection; // distinct timing, detune, tone, stereo per section
     std::array<GrainVoice, sections*singers> layers;
@@ -128,6 +141,9 @@ private:
     int lfoStep = 0;
     bool scoreVoicing = false;
     int scoreMelody = 60;
+    int liveMelody = 60;   // the sung note the key-aware harmony is measured from (rounded, with hysteresis)
+    bool keyedValid = false;   // the key-aware intervals have been computed at least once
+    int midiMelody = 60;   // mode 2: the sung note the chord intervals are measured from (rounded, with hysteresis)
     std::array<int,4> scorePitches {67,64,55,48};
     float leadFilterL = 0, leadFilterR = 0, motionSeconds = 0;
     float progress = 0;

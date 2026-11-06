@@ -21,7 +21,7 @@ void PitchTracker::prepare(float sampleRate) {
 }
 void PitchTracker::reset() {
     history.fill(0); recent.fill(0); divide=write=count=hop=missed=recentCount=0;
-    accumulator=level=conf=0; currentMidi=-1;
+    accumulator=level=conf=0; currentMidi=-1; pendingMidi=-1; pendingCount=0; steady=0;
 }
 bool PitchTracker::push(float sample) {
     accumulator += sample;
@@ -43,7 +43,7 @@ bool PitchTracker::analyse() {
     mean/=half;
     for (int i=len-half;i<len;++i) { const float v=linear[(size_t)i]-mean; energy+=v*v; }
     level=std::sqrt(energy/half);
-    auto lost=[&]{ conf=0; if (++missed>holdHops) { currentMidi=-1; recentCount=0; } return false; };
+    auto lost=[&]{ conf=0; steady=0; if (++missed>holdHops) { currentMidi=-1; recentCount=0; } return false; };
     if (level<.003f) return lost();
     // difference function and its cumulative-mean normalisation
     cmnd[0]=1.f;
@@ -85,8 +85,17 @@ bool PitchTracker::analyse() {
     if (recentCount>=3) {
         std::array<float,3> s=recent; std::sort(s.begin(),s.end()); m3=s[1];
     }
-    if (currentMidi<0 || std::abs(currentMidi-m3)>1.f) currentMidi=m3;   // a new note: lock at once
-    else currentMidi=.5f*currentMidi+.5f*m3;                              // vibrato and drift: light smoothing
+    // v0.6.1: a leap of more than a fourth INSIDE a note (no gap before it) is believed only once it has stayed put for 5 frames (40 ms).
+    // Harmonics that briefly look periodic rarely last that long, while a real note change costs the choir only 40 ms. After a gap
+    // (a new word or phrase, 3+ unvoiced frames) a new pitch is a new note, so it locks at once, and steps of a fourth or less always do.
+    // The protection only applies once the note has been steady for 6 frames: at an onset the first estimates are rough and must be correctable.
+    if (currentMidi>=0 && missed<3 && steady>=6 && std::abs(m3-currentMidi)>5.f) {
+        if (pendingCount>0 && std::abs(m3-pendingMidi)<1.5f) ++pendingCount; else { pendingMidi=m3; pendingCount=1; }
+        if (pendingCount<5) return false;
+    }
+    pendingCount=0;
+    if (currentMidi<0 || std::abs(currentMidi-m3)>1.f) { currentMidi=m3; steady=0; }   // a new note: lock at once
+    else { currentMidi=.5f*currentMidi+.5f*m3; ++steady; }                              // vibrato and drift: light smoothing
     missed=0;
     return true;
 }
@@ -194,7 +203,7 @@ void ChoirEffect::reset() {
     singerLevelGain.fill(1.f);singerDelaySeconds.fill(0.f);
     for(int i=0;i<sections*singers;++i)
         singerSeeds[(size_t)i]=0xB5297A4Du + 1013904223u*(uint32_t)(i+1);
-    tracker.reset(); room.reset(); formant.reset(); blendNow=0;
+    tracker.reset(); room.reset(); formant.reset(); blendNow=0; midiMelody=60; liveMelody=60; keyedValid=false;
     if (status==1) status=0;
     updateTargetRatios();
 }
@@ -257,29 +266,35 @@ void ChoirEffect::setVoiceParameters(const FXParams& params) {
 }
 void ChoirEffect::updateTargetRatios() {
     // Relative voicings: S fifth up, A third up, T fourth down, B octave down.
-    // In Scan mode, scale snapping follows the detected dominant pitch-class;
-    // this is NOT a reliable full musical key/chord transcription.
+    // With a KEY and SCALE chosen (v0.8) the intervals are diatonic instead; nothing about the key is detected.
     const int semis[3][4]={{7,4,-5,-12},{7,3,-5,-12},{0,0,0,0}};
-    constexpr int majorMask=(1<<0)|(1<<2)|(1<<4)|(1<<5)|(1<<7)|(1<<9)|(1<<11);
-    constexpr int minorMask=(1<<0)|(1<<2)|(1<<3)|(1<<5)|(1<<7)|(1<<8)|(1<<10);
     const int harmony=std::max(0,std::min(2,p.harmony));
-    const int keyMask=harmony==1?minorMask:majorMask;
     const float current=tracker.midi();
     const int melody=current>=0?(int)std::round(current):60;
+    // MIDI chord mode: measure the intervals from the note being sung. The reference note only moves once the singer is clearly
+    // closer to another semitone (hysteresis), so vibrato never flips every harmony by a semitone.
+    if (p.mode==2 && current>=0 && std::abs(current-(float)midiMelody)>.75f) midiMelody=melody;
+    if (current>=0 && std::abs(current-(float)liveMelody)>.75f) liveMelody=melody;
+    // Key-aware harmony (v0.8): with a scale chosen, the live intervals land on notes of that scale. They are recomputed whenever the
+    // sung note moves, and held as they were while nothing is being sung.
+    const bool keyed=p.scale>0 && !scoreVoicing && p.mode!=2 && harmony!=2;
+    if (keyed && current<0 && keyedValid) return;
+    const auto keyedIntervals=choir::harmonyIntervals(liveMelody,p.keyRoot,p.scale);
+    if (keyed) keyedValid=true;
     for (int i=0;i<sections;++i) {
         int interval=semis[harmony][i];
         if (scoreVoicing) {
             interval=scorePitches[(size_t)i]-scoreMelody;
-        } else if (p.mode==1 && status==2 && harmony!=2 && current>=0) {
-            const int wanted=melody+interval;
-            int best=100, error=99;
-            for(int n=wanted-3;n<=wanted+3;++n) {
-                const int relative=positiveModulo(n-rootPC,12);
-                if ((keyMask & (1<<relative))==0) continue;
-                const int delta=std::abs(n-wanted);
-                if(delta<error) { best=n; error=delta; }
+        } else if (p.mode==2) {
+            // fold into one octave either way: a large pitch shift sounds worse than the same note an octave nearer
+            interval=0;
+            if (p.midiNotes[(size_t)i]>=0) {
+                interval=p.midiNotes[(size_t)i]-midiMelody;
+                while (interval>12) interval-=12;
+                while (interval<-12) interval+=12;
             }
-            if(best!=100) interval=best-melody;
+        } else if (keyed) {
+            interval=keyedIntervals[(size_t)i];
         }
         for(int singer=0;singer<singers;++singer) {
             const int k=i*singers+singer;
@@ -307,7 +322,7 @@ void ChoirEffect::processVoices(float mono,float* voicesOut) {
             updateTargetRatios();
         }
     }
-    if(pitchUpdated && p.mode==1 && status==2 && !scoreVoicing) updateTargetRatios();
+    if(pitchUpdated && (p.mode==2 || p.scale>0) && !scoreVoicing) updateTargetRatios();
     if (++lfoStep>=256) {
         lfoStep=0;
         for(int i=0;i<sections*singers;++i) {
@@ -334,7 +349,9 @@ void ChoirEffect::processVoices(float mono,float* voicesOut) {
     // Voice gate, low level noise exclusion. Do not gate room tails.
     inputEnv+=.0012f*(std::abs(mono)-inputEnv);
     const float threshold=.0010f+.013f*(1.f-p.sensitivity);
-    const float goal=inputEnv>threshold?1.f:0.f;
+    // MIDI chord mode with no key held: the choir stays silent, like a harmonizer
+    const bool midiSilent=p.mode==2 && !scoreVoicing && p.midiNotes[0]<0 && p.midiNotes[1]<0 && p.midiNotes[2]<0 && p.midiNotes[3]<0;
+    const float goal=(inputEnv>threshold && !midiSilent)?1.f:0.f;
     outputEnv+=(goal>outputEnv?.004f:.0006f)*(goal-outputEnv);
     const float pitchedInput=mono*outputEnv;
     if(++lpcCounter>=2048) {lpcCounter=0;updateLPC();}

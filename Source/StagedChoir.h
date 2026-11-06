@@ -14,6 +14,7 @@
 // the choir) is delayed by `latencySamples` and the host is told so. The classic stage is delayed to match, so A/B
 // never changes the latency the host was told.
 #include "ChoirFX.h"
+#include "Consonants.h"
 #include "Stage/Stage.h"
 #include <atomic>
 #include <memory>
@@ -34,6 +35,14 @@ public:
     static constexpr float kMatchV05Trim = 0.0466f;
     static constexpr float kChoirMakeupDb = 12.f;
     static constexpr float kVoiceTrim = kMatchV05Trim * 3.98107171f;   // = 0.0466 * 10^(12/20) = 0.1855 (-14.6 dB); keep in step with kChoirMakeupDb
+    // AUTO LEVEL (v0.7). The choir alone measures about 6 dB under the lead it is made from (real vocals: -6.0 and -6.4 dB; synthetic
+    // phrases -3 to -6 dB; tests/balance_tests.cpp keeps it honest). With FXParams::levelMatch on, the output is scaled by
+    // 1 / sqrt((1-mix)^2 + (mix * kMatchedChoirRatio)^2), the power sum of the two paths, so the loudness stays near the input's
+    // wherever CHOIR MIX sits. It assumes the lead fader at unity: moving LEAD still moves the level, as it should.
+    static constexpr float kMatchedChoirRatio = .5f;
+    // SWELL and PULSE (v0.8)
+    static constexpr float kSwellExponent = .8f;                       // at SWELL 1 the choir level follows (input / its own average) ^ 0.8 on top of the natural 1:1
+    static double pulsePeriodBeats(int rate) { static const double beats[] { 0.0, 8.0, 4.0, 2.0, 1.0, .5 }; return beats[rate < 0 ? 0 : (rate > 5 ? 5 : rate)]; }
     static constexpr float kChoirLevelMaxDb = 12.f; // range of the CHOIR LEVEL control (FXParams::choirLevelDb), either way
     static constexpr float kIrEnergy = 1.18f;       // loaded impulse responses are scaled to this energy: the same loudness as the algorithmic hall on noise
     static constexpr int numStems = 5;              // sopranos, altos, tenors, basses, lead
@@ -47,6 +56,7 @@ public:
         std::atomic<float> outPeakL { 0.f }, outPeakR { 0.f };  // output peaks (decay ~0.3 s)
         std::atomic<float> correlation { 1.f };                 // -1..1, +1 = mono, 0 = wide, negative = out of phase
         std::atomic<float> width { 0.f };                       // 0..1, side energy share of the output
+        std::atomic<float> pitchConfidence { 0.f };             // 0..1, how clearly the lead is singing a pitch (the stage UI breathes with it)
     };
     Meters meters;
 
@@ -100,6 +110,10 @@ private:
     float scratchL[block] {}, scratchR[block] {};
     int pos = 0;
     float wetNow = 0, leadGainNow = 1;
+    ConsonantDetector consonantDetector;          // v0.8: finds the consonants so the choir does not smear them
+    std::vector<float> consonantIn;                // this block's clean consonant signal, mixed in after the choir (sized in prepare)
+    double pulsePhase = 0;                        // in beats, advanced per sample and re-synced to the host position every block
+    float swellEnv = 0, swellRef = 0; double swellActive = 0;
     float trimNow = kVoiceTrim;                   // smoothed kVoiceTrim * CHOIR LEVEL, so turning the dial never zippers
     bool lastClassic = false, stemsWanted = false, lastStems = false;
     float corr = 1.f, wid = 0.f, peakL = 0.f, peakR = 0.f;
