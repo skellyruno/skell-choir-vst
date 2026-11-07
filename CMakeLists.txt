@@ -187,7 +187,7 @@ if(OMNICHOIR_USE_SKELLCORE AND NOT OMNICHOIR_NATIVE_ONLY)
     include(FetchContent)
     FetchContent_Declare(SkellCore
         GIT_REPOSITORY https://github.com/skellyruno/skell-vst-template.git
-        GIT_TAG 685b8588f5c855f0cf61e936199dafadfff8d1d6
+        GIT_TAG 1f759e4f6ab08d950aaccfc2dfc0415825461ff1
         SOURCE_SUBDIR SkellCore)
     FetchContent_MakeAvailable(SkellCore)
     target_link_libraries(OmniChoirFX PRIVATE SkellCore::DSP)
