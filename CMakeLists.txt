@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(OmniChoirFX VERSION 0.9.0 LANGUAGES C CXX)
+project(OmniChoirFX VERSION 0.8.0 LANGUAGES C CXX)
 
 option(OMNICHOIR_NATIVE_ONLY "Build JUCE-free tests without fetching JUCE" OFF)
 option(OMNICHOIR_BUILD_TESTS "Build JUCE-free native DSP tests" ${OMNICHOIR_NATIVE_ONLY})
@@ -21,7 +21,7 @@ juce_add_plugin(OmniChoirFX
     PLUGIN_MANUFACTURER_CODE SkAu
     PLUGIN_CODE OmF2
     FORMATS VST3
-    PRODUCT_NAME "SkellyChoir"
+    PRODUCT_NAME "OmniChoir FX"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT TRUE      # v0.7: MIDI Chord mode. Still an audio effect (IS_SYNTH FALSE); DAWs that do not route MIDI to effects simply never send any
     NEEDS_MIDI_OUTPUT FALSE
@@ -29,7 +29,7 @@ juce_add_plugin(OmniChoirFX
     COPY_PLUGIN_AFTER_BUILD FALSE)
 
 juce_generate_juce_header(OmniChoirFX)
-juce_add_binary_data(OmniChoirFXArt SOURCES Assets/cathedral_stage.jpg Assets/Scenes/scene_concert_hall.jpg Assets/Scenes/scene_studio_booth.jpg Assets/Scenes/scene_chapel.jpg Assets/Scenes/scene_gospel_stage.jpg Assets/Scenes/scene_stadium_anthem.jpg Assets/Scenes/scene_headphone_choir.jpg Assets/Rooms/room_cathedral.wav Assets/Rooms/room_chapel.wav Assets/Rooms/room_small_hall.wav)
+juce_add_binary_data(OmniChoirFXArt SOURCES Assets/cathedral_stage.jpg Assets/Rooms/room_cathedral.wav Assets/Rooms/room_chapel.wav Assets/Rooms/room_small_hall.wav)
 target_link_libraries(OmniChoirFX PRIVATE OmniChoirFXArt)
 target_sources(OmniChoirFX PRIVATE
     Source/ChoirFX.h
@@ -170,43 +170,10 @@ if(OMNICHOIR_BUILD_TESTS)
     target_compile_features(OmniChoirListenRaceTests PRIVATE cxx_std_17)
     target_link_libraries(OmniChoirListenRaceTests PRIVATE Threads::Threads)
     add_test(NAME listen_capture_race COMMAND OmniChoirListenRaceTests)
-    add_executable(OmniChoirBrandingTests tests/branding_tests.cpp)
-    target_compile_features(OmniChoirBrandingTests PRIVATE cxx_std_17)
-    add_test(NAME branding COMMAND OmniChoirBrandingTests ${CMAKE_CURRENT_SOURCE_DIR})
-    add_executable(OmniChoirSceneTests tests/scene_tests.cpp)
-    target_compile_features(OmniChoirSceneTests PRIVATE cxx_std_17)
-    add_test(NAME scenes COMMAND OmniChoirSceneTests ${CMAKE_CURRENT_SOURCE_DIR})
-    add_executable(OmniChoirTitleLayoutTests tests/title_layout_tests.cpp)
-    target_compile_features(OmniChoirTitleLayoutTests PRIVATE cxx_std_17)
-    add_test(NAME title_layout COMMAND OmniChoirTitleLayoutTests)
-    add_executable(OmniChoirSkullShapeTests tests/skull_shape_tests.cpp)
-    target_compile_features(OmniChoirSkullShapeTests PRIVATE cxx_std_17)
-    add_test(NAME skull_shape COMMAND OmniChoirSkullShapeTests)
-    add_executable(OmniChoirThemeTests tests/theme_tests.cpp)
-    target_compile_features(OmniChoirThemeTests PRIVATE cxx_std_17)
-    add_test(NAME themes COMMAND OmniChoirThemeTests ${CMAKE_CURRENT_SOURCE_DIR})
-    add_executable(OmniChoirStageGeometryTests tests/stage_geometry_tests.cpp)
-    target_compile_features(OmniChoirStageGeometryTests PRIVATE cxx_std_17)
-    add_test(NAME stage_geometry COMMAND OmniChoirStageGeometryTests ${CMAKE_CURRENT_SOURCE_DIR})
     add_executable(OmniChoirCalibrateTrim tests/calibrate_trim.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
     target_compile_features(OmniChoirCalibrateTrim PRIVATE cxx_std_17)
     add_executable(OmniChoirFullTakeTests tests/fulltake_tests.cpp
         Source/Offline/FullTakeScan.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
     target_compile_features(OmniChoirFullTakeTests PRIVATE cxx_std_17)
     add_test(NAME complete_take_scan_and_score COMMAND OmniChoirFullTakeTests)
-endif()
-
-
-# SkellCore shared foundation (pinned immutable source revision).
-# This only adds a common library target. The current choir DSP and UI paths
-# remain untouched until separately validated with golden audio fixtures.
-option(OMNICHOIR_USE_SKELLCORE "Link the version-pinned shared SkellCore DSP" ON)
-if(OMNICHOIR_USE_SKELLCORE AND NOT OMNICHOIR_NATIVE_ONLY)
-    include(FetchContent)
-    FetchContent_Declare(SkellCore
-        GIT_REPOSITORY https://github.com/skellyruno/skell-vst-template.git
-        GIT_TAG 1f759e4f6ab08d950aaccfc2dfc0415825461ff1
-        SOURCE_SUBDIR SkellCore)
-    FetchContent_MakeAvailable(SkellCore)
-    target_link_libraries(OmniChoirFX PRIVATE SkellCore::DSP)
 endif()
