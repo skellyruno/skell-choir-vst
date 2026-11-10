@@ -1,5 +1,7 @@
 # OmniChoir FX v0.6.1
 
+> **Superseded in part by v0.7** (`docs/V0_7_CHANGELOG.md`): the default OUTPUT went back to 1.0 because AUTO LEVEL now does the loudness work, and the numbers below were measured without it.
+
 ## What was wrong
 
 At the plugin's default settings the choir was too quiet to read as a choir. Measured on a real recorded low male vocal (raw take, voiced

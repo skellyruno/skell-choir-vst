@@ -74,8 +74,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout OmniChoirAudioProcessor::cre
     addFloat(layout,"ensemble","Ensemble Detune",0.f,1.f,.001f,.58f);
     addFloat(layout,"humanize","Human Variation",0.f,1.f,.001f,.75f);
     addFloat(layout,"formant","Singer Character",0.f,1.f,.001f,.5f);
-    addFloat(layout,"leadX","Lead X",-24.f,24.f,.01f,0.f,"m");   // v0.9: wide enough that the lead reaches the whole stage from any mic position (see StageGeometry.h)
-    addFloat(layout,"leadY","Lead Y",-16.f,22.f,.01f,.4f,"m");
+    addFloat(layout,"leadX","Lead X",-9.f,9.f,.01f,0.f,"m");
+    addFloat(layout,"leadY","Lead Y",-5.f,12.f,.01f,.4f,"m");
     addFloat(layout,"leadGain","Lead Level",0.f,1.5f,.001f,1.f);
     addFloat(layout,"sensitivity","Input Sensitivity",0.f,1.f,.001f,.65f);
     addFloat(layout,"roomSize","Room Size",0.f,1.f,.001f,.52f);
@@ -243,7 +243,6 @@ void OmniChoirAudioProcessor::getStateInformation(juce::MemoryBlock& dest) {
         xml->setAttribute("irPath",irPath);
         xml->setAttribute("omniStateVersion",kStateVersion);
         xml->setAttribute("omniProUi",proUi());
-        xml->setAttribute("omniScene",scene.load());
         copyXmlToBinary(*xml,dest);
     }
 }
@@ -258,7 +257,6 @@ void OmniChoirAudioProcessor::setStateInformation(const void* data,int size) {
                 if(auto* match=parameters.getParameter("levelMatch")) match->setValueNotifyingHost(match->convertTo0to1(0.f));
             if(version<4)   // saved before CONSONANTS existed: it loads with CONSONANTS off, exactly as it sounded
                 if(auto* cons=parameters.getParameter("consonants")) cons->setValueNotifyingHost(cons->convertTo0to1(0.f));
-            scene.store(scenes::clampScene(xml->getIntAttribute("omniScene",0)));   // older sessions: the original photo
             setProUi(xml->getBoolAttribute("omniProUi",true));   // a session from before the Easy mode keeps the full MAIN page
             savedRoot.store(juce::jlimit(0,11,xml->getIntAttribute("scanPitchClass",0)));
             visibleStatus.store(xml->getBoolAttribute("scanWasReady",false)?2:0);
@@ -320,7 +318,6 @@ void OmniChoirAudioProcessor::setParameterValue(const juce::String& id,float val
 }
 void OmniChoirAudioProcessor::applyStagePreset(int index) {
     if(index<0 || index>=choir::kNumStagePresets) return;
-    scene.store(scenes::clampScene(index));   // the picture behind the singers follows the room
     const auto& s=choir::kStagePresets[index];
     const auto set=[this](const juce::String& id,float value) {setParameterValue(id,value);};
     for(int i=0;i<4;++i) {
@@ -356,18 +353,8 @@ void OmniChoirAudioProcessor::setCurrentProgram(int index) {
     currentProgram=index;
     applyStyle(index);
 }
-juce::File OmniChoirAudioProcessor::settingsFolder() {
-    const auto base=juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
-    const auto folder=base.getChildFile(branding::kSettingsFolder);
-    if(!folder.isDirectory()) {
-        // first run after the rename: bring the user's styles, window size and "tour seen" flag across. The old folder is left alone for older versions.
-        const auto legacy=base.getChildFile(branding::kLegacySettingsFolder);
-        if(legacy.isDirectory()) legacy.copyDirectoryTo(folder);
-    }
-    return folder;
-}
 juce::File OmniChoirAudioProcessor::userStyleFolder() {
-    const auto folder=settingsFolder().getChildFile("Styles");
+    const auto folder=juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("OmniChoir FX").getChildFile("Styles");
     folder.createDirectory();
     return folder;
 }
@@ -378,14 +365,13 @@ bool OmniChoirAudioProcessor::saveStyleFile(const juce::File& file) {
     std::vector<std::pair<std::string,float>> values;
     for(int i=0;i<choir::kNumUserStyleIds;++i)
         if(auto* value=parameters.getRawParameterValue(choir::kUserStyleIds[i])) values.emplace_back(choir::kUserStyleIds[i],value->load());
-    return file.replaceWithText(juce::String(choir::writeStyleFile(file.getFileNameWithoutExtension().toStdString(),values,scene.load())));
+    return file.replaceWithText(juce::String(choir::writeStyleFile(file.getFileNameWithoutExtension().toStdString(),values)));
 }
 bool OmniChoirAudioProcessor::loadStyleFile(const juce::File& file) {
     if(!file.existsAsFile() || file.getSize()>64*1024) return false;   // a style file is a couple of kilobytes: refuse anything silly
     choir::StyleFileData data;
     if(!choir::parseStyleFile(file.loadFileAsString().toStdString(),data) || data.values.empty()) return false;
     for(const auto& value:data.values) setParameterValue(juce::String(value.first),value.second);
-    if(data.scene>=0) scene.store(scenes::clampScene(data.scene));
     return true;
 }
 void OmniChoirAudioProcessor::startListening() {

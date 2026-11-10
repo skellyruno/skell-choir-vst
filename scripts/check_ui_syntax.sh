@@ -20,7 +20,7 @@ PY
   then fail=1; else echo "ASCII-only UI strings   ok"; fi
 fi
 
-for f in Source/PluginEditor.cpp Source/PluginProcessor.cpp; do
+for f in Source/PluginEditor.cpp Source/PluginProcessor.cpp tools/screenshots.cpp; do
   printf '%-30s ' "$f"
   out=$($CXX -std=c++17 -fsyntax-only -isystem tests/juce_stub -ISource "$f" 2>&1)
   if echo "$out" | grep -q "error"; then echo "ERRORS"; echo "$out" | grep -E "error" | head -15 | sed 's/^/    /'; fail=1; else echo "ok (against the stub)"; fi

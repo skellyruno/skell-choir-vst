@@ -17,6 +17,15 @@ No CMake, no JUCE, no internet. Logs are written to `build-native/`. The suite i
 | `staged`, `features`, `preset` | The faithful stage: latency, A/B bit-identity with v0.5, meters, stems, presets, block-size independence |
 | `balance` | **Goals, not history.** At the plugin's own defaults the choir sits 0..+9 dB over the lead, the output is not far below the input, every section is audible, CHOIR LEVEL does what it says, nothing passes full scale. It also fails if `tests/test_support.h` drifts from the defaults in `PluginProcessor.cpp`. |
 | `real_vocal` | A recorded low male vocal (raw and Auto-Tuned, `tests/data/`) through the tracker and the engine |
+| `midi_chord` | MIDI chord mode: key-to-section assignment, the sustain pedal, that the choir sings the chord you hold (spectrum check), silence with no key, octave folding, vibrato |
+| `style_tests` | Styles, CHOIR SIZE and SURPRISE ME: every value inside the plugin's own parameter ranges, the processor sets what the styles say and never your lead/output, every style and random style renders a real voice at a sane level (`OMNICHOIR_THOROUGH=1` renders 60 random ones, slower) |
+| `room_ir` | The built-in rooms: the files are sane, decay in the right order, and the engine takes each one at the right level |
+| `key_scale` | KEY and SCALE: the scale maths, every (scale, key, note) lands in key, the choir sings G not G# over C major, unison and vibrato cases |
+| `swell_pulse` | SWELL exaggerates dynamics (and is bit-identical at 0); PULSE has the right period, depth and follows the host position |
+| `consonants` | The consonant detector on synthetic and on real singing, and that the stage stops smearing them (clarity measured inside the consonants) |
+| `style_files` | Your own styles: the allow-list is made of real parameters and never of yours; round trip; hostile files |
+| `listen` | LISTEN: note lookup, in-key voicing, analysis of a melody with vibrato, the capture session, playback lined up with a host clock, real takes |
+| `listen_race` | The capture thread against the message thread; run it under ThreadSanitizer with `SANITIZE=thread scripts/run_tests.sh listen_race` |
 | `python_interop` | MIDI export and the external-stem tools |
 
 The same tests run under CTest: `cmake -S . -B build-native -DOMNICHOIR_NATIVE_ONLY=ON && cmake --build build-native && ctest --test-dir build-native --output-on-failure`.
@@ -48,10 +57,18 @@ Until this workflow has run green, the JUCE layer (processor, editor, TakeWorker
 
 ## 4. UI behaviour worth knowing
 
-- Tabs: `MAIN` (choir mix, ensemble, humanize, space, output, the four section faders and the lead fader, PROCESS and HARMONY), `ROOM`, `VOICE`, `TAKE`, `STEMS`. Hover any control for a tooltip.
-- Stage: drag the four sections, your lead or the mic. Double-click one to put it back to its default.
-- `ROOM`: the ENGINE switch picks the faithful stage or the simpler classic v0.5 stage; LOAD ROOM IR takes a recording of a real room for the HALL (click it again for a menu to swap or remove it).
-- `VOICE`: **CHOIR LEVEL** (-12..+12 dB) sets the choir against the lead. It applies to the faithful stage; the classic stage is bit-identical to v0.5 and ignores it.
-- `TAKE`: after importing a take, `EXPORT MIDI` writes a five-track MIDI file (Soprano, Alto, Tenor, Bass, Lead).
-- `STEMS`: load a JSON manifest, then `MIX STEMS WAV`. Closing the plugin editor cancels active file operations.
-- For the imported-stem path, set `"room": 0.2` in the manifest; its spatial engine is a lightweight offline approximation.
+- **Header**: KEY and SCALE (you choose; NO SCALE keeps fixed harmony intervals), STYLE / ROOM, CHOIR on/off. The STYLE / ROOM menu also holds MY STYLES (save, load, open the folder) and "Show the tour".
+- **Easy / Pro** (button at the right of the tab row; new instances start in Easy). Easy shows CHOIR SIZE, CHOIR MIX, OUTPUT, HARMONY and a LISTEN button. Pro shows the tabs: `MAIN`, `ROOM`, `VOICE`, `FOLLOW` (CHOIR LEVEL, SENSITIVITY, CONSONANTS, SWELL, PULSE rate and depth, AUTO LEVEL), `LISTEN`, `TAKE`, `STEMS`.
+- **LISTEN**: press LISTEN, play the take through the plugin from the start, press it again (it says STOP while listening). The piano roll shows the notes; click a note, then S+/S- ... B+/B- move a part by a semitone; the wheel scrolls. PROCESS switches to Listen by itself.
+- **Stage**: drag the four sections, your lead or the mic; double-click one to put it back. Click a section's name to solo it, right-click or shift-click to mute it.
+- **PROCESS = MIDI Chord**: route a MIDI track to the plugin and hold keys; the stage shows the chord.
+- `ROOM`: ENGINE faithful/classic; ROOMS / LOAD IR (three built-in synthetic rooms, your own file, or remove). `TAKE` imports a recorded file and exports MIDI/WAV; `STEMS` mixes separately recorded singers.
+
+## 5. The listening pack and the screenshots
+
+`scripts/build_listening_pack.sh [vocal.wav [words.wav]]` renders the vocal through every feature into `./listening-pack` (WAV files and a README of what to listen for). It works on any WAV and needs only a C++ compiler.
+`tools/screenshots.cpp` paints every tab to PNG headlessly; build it with `-DOMNICHOIR_BUILD_SCREENSHOTS=ON` (run it under `xvfb-run` on Linux). The CI `screenshots` job does exactly that and uploads the images; it never fails the build.
+
+## 6. Regenerating the built-in rooms
+
+`python3 tools/make_room_irs.py` (needs numpy and scipy) rewrites `Assets/Rooms/*.wav` deterministically. `tests/room_ir_tests.cpp` checks the result.

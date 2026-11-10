@@ -1,0 +1,89 @@
+// NOT COMPILED. The body of PitchTracker::analyse() from the pYIN-style tracker tried for v0.8 (strict-prior variant 'V2').
+// It needs these members in PitchTracker (Source/ChoirFX.h): std::array<float,160> alpha; float alphaUnvoiced; bool voicedNow; kBins=160; kLowMidi=35.5f.
+// See docs/experiments/TRACKER_EXPERIMENT.md for why it was not adopted.
+
+    const auto lost=[&]{
+        conf=0; voicedNow=false;
+        alpha.fill(0); alphaUnvoiced=1.f;                        // silence: the next sound starts from "not voiced"
+        if (++missed>holdHops) currentMidi=-1;                   // the last pitch is held ~160 ms through consonants and breaths
+        return false;
+    };
+    if (level<.003f) return lost();
+    // difference function and its cumulative-mean normalisation
+    cmnd[0]=1.f;
+    double running=0;
+    for (int tau=1;tau<=maxLag;++tau) {
+        double sum=0;
+        for (int j=0;j<half;++j) { const float d=linear[(size_t)j]-linear[(size_t)(j+tau)]; sum+=(double)d*d; }
+        running+=sum;
+        cmnd[(size_t)tau]=running>1.e-12?(float)(sum*tau/running):1.f;
+    }
+    // ---- the candidates: every dip of the normalised difference, with the depth judged on the parabola through it (a period that
+    // falls between two lags, 22.5 samples at 711 Hz, is otherwise shallower than its integer multiple and lands an octave low)
+    struct Candidate { float depth, midi, mass; };
+    std::array<Candidate,24> candidates; int numCandidates=0;
+    for (int tau=minLag+1;tau<maxLag && numCandidates<(int)candidates.size();++tau) {
+        const float a=cmnd[(size_t)tau-1], b=cmnd[(size_t)tau], c=cmnd[(size_t)tau+1];
+        if (!(b<=a && b<c)) continue;
+        const float denom=a-2*b+c;
+        float depth=b, refined=(float)tau;
+        if (denom>1.e-6f) { depth=b-(a-c)*(a-c)/(8*denom); refined+=bound(.5f*(a-c)/denom,-.5f,.5f); }
+        if (depth>=.95f) continue;
+        const float midi=69.f+12.f*std::log2((rate/refined)/440.f);
+        if (std::isfinite(midi) && midi>=kLowMidi && midi<kLowMidi+(kBins-1)/3.f) candidates[(size_t)numCandidates++]={std::max(depth,0.f),midi,0.f};
+    }
+    // each absolute threshold nominates the first dip under it; the thresholds are weighted by a prior favouring strict ones
+    static constexpr float thresholds[]={.05f,.10f,.15f,.20f,.30f,.45f,.65f,.90f};
+    static constexpr float weights[]   ={.20f,.28f,.20f,.12f,.08f,.06f,.04f,.02f};
+    for (int t=0;t<8;++t)
+        for (int k=0;k<numCandidates;++k)
+            if (candidates[(size_t)k].depth<thresholds[t]) { candidates[(size_t)k].mass+=weights[t]; break; }
+    float voicedMass=0;
+    for (int k=0;k<numCandidates;++k) voicedMass+=candidates[(size_t)k].mass;
+    // ---- observation: voiced mass spread over the bins around each candidate, plus a small floor so no bin is impossible
+    std::array<float,kBins> observation;
+    observation.fill(.003f/kBins);
+    for (int k=0;k<numCandidates;++k) {
+        const float centre=(candidates[(size_t)k].midi-kLowMidi)*3.f;
+        float total=0; std::array<float,11> g {};
+        for (int d=-5;d<=5;++d) { const float x=((float)std::lround(centre)+(float)d-centre)/1.2f; g[(size_t)(d+5)]=std::exp(-.5f*x*x); total+=g[(size_t)(d+5)]; }
+        for (int d=-5;d<=5;++d) {
+            const int j=(int)std::lround(centre)+d;
+            if (j>=0 && j<kBins) observation[(size_t)j]+=candidates[(size_t)k].mass*g[(size_t)(d+5)];
+        }
+    }
+    // the unvoiced state's likelihood is on the same per-bin scale as a voiced bin's (each pitch bin has its own unvoiced twin in pYIN)
+    const float observationUnvoiced=(std::max(0.f,1.f-voicedMass)+.02f)/kBins;
+    // ---- transition: pitch moves a little between frames, leaps are possible but need strong evidence, voicing switches are cheap
+    constexpr float stayVoiced=.95f, startVoiced=.40f, leap=.01f;
+    static const std::array<float,11> kernel=[]{ std::array<float,11> k {}; float t=0; for (int d=-5;d<=5;++d) { const float x=(float)d/1.5f; k[(size_t)(d+5)]=std::exp(-.5f*x*x); t+=k[(size_t)(d+5)]; } for (auto& v:k) v/=t; return k; }();
+    float voicedBefore=0; for (float v:alpha) voicedBefore+=v;
+    std::array<float,kBins> next;
+    float total=0;
+    for (int j=0;j<kBins;++j) {
+        float smooth=0;
+        for (int d=-5;d<=5;++d) { const int i=j+d; if (i>=0 && i<kBins) smooth+=alpha[(size_t)i]*kernel[(size_t)(d+5)]; }
+        const float predicted=stayVoiced*((1.f-leap)*smooth+leap*voicedBefore/kBins)+alphaUnvoiced*startVoiced/kBins;
+        next[(size_t)j]=predicted*observation[(size_t)j];
+        total+=next[(size_t)j];
+    }
+    float nextUnvoiced=((1.f-stayVoiced)*voicedBefore+alphaUnvoiced*(1.f-startVoiced))*observationUnvoiced;
+    total+=nextUnvoiced;
+    if (!(total>1.e-30f)) return lost();
+    for (auto& v:next) v/=total;
+    nextUnvoiced/=total;
+    alpha=next; alphaUnvoiced=nextUnvoiced;
+    // ---- decision: voiced if most of the probability is on pitched bins (a lower bar to stay voiced than to become voiced)
+    float voicedNowMass=0; int strongest=0;
+    for (int j=0;j<kBins;++j) { voicedNowMass+=alpha[(size_t)j]; if (alpha[(size_t)j]>alpha[(size_t)strongest]) strongest=j; }
+    voicedNow=voicedNowMass>(voicedNow?.35f:.55f);
+    if (!voicedNow) return lost();
+    float weighted=0, mass=0, near=0;
+    for (int j=std::max(0,strongest-4);j<=std::min(kBins-1,strongest+4);++j) { weighted+=alpha[(size_t)j]*(kLowMidi+(float)j/3.f); mass+=alpha[(size_t)j]; }
+    for (int j=std::max(0,strongest-3);j<=std::min(kBins-1,strongest+3);++j) near+=alpha[(size_t)j];
+    currentMidi=weighted/mass;
+    conf=bound(near,0.f,1.f);
+    missed=0;
+    return true;
+}
+

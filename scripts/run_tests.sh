@@ -3,6 +3,7 @@
 #   scripts/run_tests.sh              all tests
 #   scripts/run_tests.sh balance      only tests whose name contains "balance"
 #   SANITIZE=1 scripts/run_tests.sh   AddressSanitizer + UndefinedBehaviorSanitizer (slower)
+#   SANITIZE=thread scripts/run_tests.sh listen   ThreadSanitizer (use with a name filter: it is slow)
 #   CXX=clang++ scripts/run_tests.sh  pick the compiler (default: c++, g++ or clang++, whichever exists)
 # The same tests run under CTest (cmake -DOMNICHOIR_NATIVE_ONLY=ON, then ctest); this script is for machines without CMake.
 set -u
@@ -12,8 +13,9 @@ ROOT=$PWD
 CXX=${CXX:-$(command -v c++ || command -v g++ || command -v clang++ || true)}
 [ -n "$CXX" ] || { echo "no C++ compiler found (install g++ or clang++)"; exit 2; }
 OUT=${OUT:-build-native}; mkdir -p "$OUT"
-FLAGS="-std=c++17 -O2 -Wall -Wextra -ISource"
-[ "${SANITIZE:-0}" = 1 ] && FLAGS="-std=c++17 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -ISource"
+FLAGS="-std=c++17 -O2 -Wall -Wextra -pthread -ISource"
+[ "${SANITIZE:-0}" = thread ] && FLAGS="-std=c++17 -O1 -g -pthread -fsanitize=thread -ISource"
+[ "${SANITIZE:-0}" = 1 ] && FLAGS="-std=c++17 -O1 -g -pthread -fsanitize=address,undefined -fno-sanitize-recover=undefined -ISource"
 ENGINE="Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp"
 STAGED="Source/StagedChoir.cpp $ENGINE"
 
@@ -31,6 +33,15 @@ TESTS=(
   "fulltake_tests|tests/fulltake_tests.cpp Source/Offline/FullTakeScan.cpp $ENGINE|"
   "balance_tests|tests/balance_tests.cpp $STAGED|$ROOT"
   "real_vocal_tests|tests/real_vocal_tests.cpp $STAGED|$ROOT/tests/data"
+  "midi_chord_tests|tests/midi_chord_tests.cpp $STAGED|"
+  "style_tests|tests/style_tests.cpp $STAGED|$ROOT"
+  "room_ir_tests|tests/room_ir_tests.cpp $STAGED|$ROOT"
+  "key_scale_tests|tests/key_scale_tests.cpp $STAGED|"
+  "swell_pulse_tests|tests/swell_pulse_tests.cpp $STAGED|"
+  "consonant_tests|tests/consonant_tests.cpp $STAGED|$ROOT"
+  "style_file_tests|tests/style_file_tests.cpp $STAGED|$ROOT"
+  "listen_tests|tests/listen_tests.cpp Source/Offline/FullTakeScan.cpp $STAGED|$ROOT"
+  "listen_race_tests|tests/listen_race_tests.cpp Source/Offline/FullTakeScan.cpp $ENGINE|"
 )
 
 filter=${1:-}; pass=0; fail=0; failed=()

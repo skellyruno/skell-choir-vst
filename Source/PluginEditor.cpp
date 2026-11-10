@@ -1,5 +1,4 @@
 #include "PluginEditor.h"
-#include "UI/SkullShape.h"
 #include <BinaryData.h>
 #include <algorithm>
 #include <cmath>
@@ -51,44 +50,19 @@ ValueText makeText(ValueFormat f,float unity,double lo,double hi) {
     return t;
 }
 
-// ------------------------------------------------------------------------------------------------ the skull
-// One shape of UI/SkullShape.h, scaled into `box`. Everything is drawn from the data, so tools/render_skull_preview.py shows the same picture.
-void fillSkullShape(juce::Graphics& g,const skull::Shape& s,juce::Rectangle<float> box) {
-    const float x0=box.getX(),y0=box.getY(),w=box.getWidth(),h=box.getHeight();
-    const auto& v=s.v;
-    switch(s.kind) {
-        case skull::Kind::Ellipse:
-            g.fillEllipse(x0+(v[0]-v[2])*w,y0+(v[1]-v[3])*h,v[2]*2.f*w,v[3]*2.f*h);
-            break;
-        case skull::Kind::RoundRect:
-            g.fillRoundedRectangle(x0+v[0]*w,y0+v[1]*h,v[2]*w,v[3]*h,v[4]*w);
-            break;
-        case skull::Kind::Poly: {
-            juce::Path path;
-            path.startNewSubPath(x0+v[0]*w,y0+v[1]*h);
-            for(int i=2;i+1<s.count;i+=2) path.lineTo(x0+v[(size_t)i]*w,y0+v[(size_t)i+1]*h);
-            path.closeSubPath();
-            g.fillPath(path);
-            break;
-        }
-    }
-}
-
 // ----------------------------------------------------------------------------------------------- controls
-// A control that sets a colour once (a label, a slider fill) re-reads the palette here when the theme changes.
-struct Themed { virtual ~Themed()=default; virtual void refreshColours()=0; };
-
-class Dial final : public juce::Component, public juce::SettableTooltipClient, public Themed {
+class Dial final : public juce::Component, public juce::SettableTooltipClient {
 public:
     Dial(OmniChoirAudioProcessor& p,const juce::String& title,const juce::String& id,const juce::String& tip,ValueFormat format,float unity)
         : attachment(p.parameters,id,dial) {
         label.setText(title,juce::dontSendNotification);
         label.setJustificationType(juce::Justification::centred);
+        label.setColour(juce::Label::textColourId,kMuted);
         label.setFont(boldFont(10.f));
         label.setInterceptsMouseClicks(false,false);
         dial.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         dial.setTextBoxStyle(juce::Slider::TextBoxBelow,false,72,16);
-        refreshColours();
+        dial.setColour(juce::Slider::rotarySliderFillColourId,kGold);
         if(format!=ValueFormat::Plain) {
             const auto text=makeText(format,unity,dial.getMinimum(),dial.getMaximum());
             dial.textFromValueFunction=text.text;
@@ -99,29 +73,24 @@ public:
         addAndMakeVisible(label);addAndMakeVisible(dial);
     }
     void resized() override {label.setBounds(0,0,getWidth(),16);dial.setBounds(0,16,getWidth(),getHeight()-16);}
-    void refreshColours() override {
-        label.setColour(juce::Label::textColourId,kMuted);
-        dial.setColour(juce::Slider::rotarySliderFillColourId,kGold);
-        repaint();
-    }
 private:
     juce::Label label;
     juce::Slider dial;
     juce::AudioProcessorValueTreeState::SliderAttachment attachment;
 };
 
-class Fader final : public juce::Component, public juce::SettableTooltipClient, public Themed {
+class Fader final : public juce::Component, public juce::SettableTooltipClient {
 public:
-    // accent: 0..3 the sections, 4 the lead (omni::faderAccent), so the colour follows the theme
-    Fader(OmniChoirAudioProcessor& p,const juce::String& title,const juce::String& id,int accentIndex,const juce::String& tip,float unity)
-        : accentOf(accentIndex),attachment(p.parameters,id,slider) {
+    Fader(OmniChoirAudioProcessor& p,const juce::String& title,const juce::String& id,juce::Colour accent,const juce::String& tip,float unity)
+        : attachment(p.parameters,id,slider) {
         label.setText(title,juce::dontSendNotification);
         label.setJustificationType(juce::Justification::centred);
+        label.setColour(juce::Label::textColourId,accent);
         label.setFont(boldFont(10.f));
         label.setInterceptsMouseClicks(false,false);
         slider.setSliderStyle(juce::Slider::LinearVertical);
         slider.setTextBoxStyle(juce::Slider::TextBoxBelow,false,50,15);
-        refreshColours();
+        slider.setColour(juce::Slider::trackColourId,accent);
         const auto text=makeText(ValueFormat::GainDb,unity,slider.getMinimum(),slider.getMaximum());
         slider.textFromValueFunction=text.text;
         slider.valueFromTextFunction=text.parse;
@@ -130,25 +99,18 @@ public:
         addAndMakeVisible(label);addAndMakeVisible(slider);
     }
     void resized() override {label.setBounds(0,0,getWidth(),16);slider.setBounds(0,16,getWidth(),getHeight()-16);}
-    void refreshColours() override {
-        const auto accent=faderAccent(accentOf);
-        label.setColour(juce::Label::textColourId,accent);
-        slider.setColour(juce::Slider::trackColourId,accent);
-        repaint();
-    }
 private:
-    int accentOf;
     juce::Label label;
     juce::Slider slider;
     juce::AudioProcessorValueTreeState::SliderAttachment attachment;
 };
 
-class Choice final : public juce::Component, public juce::SettableTooltipClient, public Themed {
+class Choice final : public juce::Component, public juce::SettableTooltipClient {
 public:
     Choice(OmniChoirAudioProcessor& p,const juce::String& title,const juce::String& id,const juce::String& tip) {
         label.setText(title,juce::dontSendNotification);
         label.setJustificationType(juce::Justification::centredLeft);
-        refreshColours();
+        label.setColour(juce::Label::textColourId,kMuted);
         label.setFont(boldFont(10.f));
         label.setInterceptsMouseClicks(false,false);
         combo.addItemList(p.parameters.getParameter(id)->getAllValueStrings(),1);
@@ -157,7 +119,6 @@ public:
         addAndMakeVisible(label);addAndMakeVisible(combo);
     }
     void resized() override {label.setBounds(2,0,getWidth()-2,16);combo.setBounds(0,18,getWidth(),juce::jmin(28,getHeight()-18));}
-    void refreshColours() override {label.setColour(juce::Label::textColourId,kMuted);repaint();}
 private:
     juce::Label label;
     juce::ComboBox combo;
@@ -188,7 +149,7 @@ void drawFigure(juce::Graphics& g,juce::Point<float> center,juce::Colour colour,
     }
 }
 juce::File settingsFolder() {   // per user, not per project: the tour has been seen, the window size you like
-    return OmniChoirAudioProcessor::settingsFolder();
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("OmniChoir FX");
 }
 void loadWindowSize(int& width,int& height) {
     const auto parts=juce::StringArray::fromTokens(settingsFolder().getChildFile("window-size.txt").loadFileAsString(),juce::String(" \n"),juce::String());
@@ -243,51 +204,11 @@ void StageView::toggleState(int section,bool mute) {
         param->beginChangeGesture();param->setValueNotifyingHost(param->convertTo0to1(next));param->endChangeGesture();
     }
 }
-void SkullButton::paintButton(juce::Graphics& g,bool shouldDrawButtonAsHighlighted,bool shouldDrawButtonAsDown) {
-    const auto area=getLocalBounds().toFloat().reduced(1.f);
-    const float size=juce::jmin(area.getWidth(),area.getHeight());
-    auto box=juce::Rectangle<float>(area.getCentreX()-size*.5f,area.getCentreY()-size*.5f,size,size);
-    if(shouldDrawButtonAsDown) box=box.translated(0.f,1.f);
-    if(shouldDrawButtonAsHighlighted||shouldDrawButtonAsDown) {   // a soft halo so it reads as a button
-        g.setColour(kGold.withAlpha(shouldDrawButtonAsDown?.30f:.18f));
-        g.fillEllipse(box.getX()-3.f,box.getY()-3.f,box.getWidth()+6.f,box.getHeight()+6.f);
-    }
-    g.setGradientFill(juce::ColourGradient(kGoldHi,0.f,box.getY(),kGoldLo,0.f,box.getBottom(),false));
-    for(const auto& s:skull::kShapes) if(s.role==skull::Role::Body) fillSkullShape(g,s,box);
-    g.setColour(kBg);
-    for(const auto& s:skull::kShapes) if(s.role==skull::Role::Cut) fillSkullShape(g,s,box);
-    g.setColour(juce::Colours::white.withAlpha(.34f));
-    for(const auto& s:skull::kShapes) if(s.role==skull::Role::Glint) fillSkullShape(g,s,box);
-}
-
-const juce::Image& StageView::sceneImage(int index) {
-    index=scenes::clampScene(index);
-    auto& image=sceneImages[(size_t)index];
-    if(!image.isValid()) {
-        const char* data=BinaryData::cathedral_stage_jpg;int size=BinaryData::cathedral_stage_jpgSize;   // 0 Default and 1 Cathedral
-        switch(index) {
-            case 2:data=BinaryData::scene_concert_hall_jpg;size=BinaryData::scene_concert_hall_jpgSize;break;
-            case 3:data=BinaryData::scene_studio_booth_jpg;size=BinaryData::scene_studio_booth_jpgSize;break;
-            case 4:data=BinaryData::scene_chapel_jpg;size=BinaryData::scene_chapel_jpgSize;break;
-            case 5:data=BinaryData::scene_gospel_stage_jpg;size=BinaryData::scene_gospel_stage_jpgSize;break;
-            case 6:data=BinaryData::scene_stadium_anthem_jpg;size=BinaryData::scene_stadium_anthem_jpgSize;break;
-            case 7:data=BinaryData::scene_headphone_choir_jpg;size=BinaryData::scene_headphone_choir_jpgSize;break;
-            default:break;
-        }
-        image=juce::ImageCache::getFromMemory(data,size);
-    }
-    return image;
-}
-void StageView::followScene() {
-    const int now=scenes::clampScene(processor.currentScene());
-    if(now==shownScene) return;
-    fromScene=shownScene;shownScene=now;
-    // a preset that keeps the same picture (Default <-> Cathedral) does not fade
-    fadeStartMs=scenes::samePicture(fromScene,shownScene)?-1.0e9:juce::Time::getMillisecondCounterHiRes();
-}
-StageView::StageView(OmniChoirAudioProcessor& p):processor(p) {
+StageView::StageView(OmniChoirAudioProcessor& p):processor(p),
+    cathedral(juce::ImageCache::getFromMemory(BinaryData::cathedral_stage_jpg,
+                                              BinaryData::cathedral_stage_jpgSize)) {
     setMouseCursor(juce::MouseCursor::DraggingHandCursor);
-    setTooltip("Drag the singers, your lead and the mic. The lead and the mic move independently: moving the mic never moves her. Double-click one to put it back; the faint ring shows where the lead's home spot is. Click a name to solo that section; right-click (or shift-click) to mute it.");
+    setTooltip("Drag the singers, your lead and the mic. Double-click one to put it back. Click a name to solo that section; right-click (or shift-click) to mute it.");
     startTimerHz(30);
 }
 juce::Rectangle<float> StageView::plot() const {return getLocalBounds().toFloat().reduced(7.f,7.f);}
@@ -313,31 +234,27 @@ void StageView::resetParameter(const juce::String& id) {
     if(auto* param=processor.parameters.getParameter(id))
         param->setValueNotifyingHost(param->getDefaultValue());
 }
-choir::StagePoint StageView::micWorld() const {return {value("micX"),value("micY")};}
-choir::StagePoint StageView::leadWorld() const {return choir::StageGeometry::leadOnStage(micWorld(),value("leadX"),value("leadY"));}
 juce::Point<float> StageView::leadPosition() const {
-    // The lead is drawn at the mic + a fixed shift + her own offsets, so she is distinct from the gold mic and independent of it.
-    const auto lead=leadWorld();
-    return worldToPoint(lead.x,lead.y);
+    // Lead is always distinct from the gold microphone. Her X/Y parameters
+    // are offsets, just as in the original web stage JS.
+    return worldToPoint(value("micX")-2.35f+value("leadX"),value("micY")+1.9f+value("leadY"));
 }
 int StageView::hit(juce::Point<float> pos) const {
-    // One score for everything: distance divided by that thing's own reach. The smallest score below 1 wins, so nothing has priority
-    // and the thing nearest the pointer (for its size) is the one you pick up.
     int found=-2;
-    float best=1.f;
-    const auto test=[&](int index,juce::Point<float> target,float reach) {
-        const float score=pos.getDistanceFrom(target)/reach;
-        if(score<best) {best=score;found=index;}
+    float closest=std::max(18.f,(float)getWidth()*.033f);
+    const auto test=[&](int index,juce::Point<float> target) {
+        const float d=pos.getDistanceFrom(target);
+        if(d<closest) {closest=d;found=index;}
     };
     // Hit any member of the group, not only its centroid, like demo.js.
-    const float groupReach=std::max(18.f,(float)getWidth()*.033f);
     for(int i=0;i<4;++i) {
         const float x=value("x"+juce::String(i)),y=value("y"+juce::String(i));
         for(int row=0;row<3;++row)for(int col=0;col<4;++col)
-            test(i,worldToPoint(x+(col-1.5f)*.47f+(row%2)*.12f,y+(row-1.f)*.53f),groupReach);
+            test(i,worldToPoint(x+(col-1.5f)*.47f+(row%2)*.12f,y+(row-1.f)*.53f));
     }
-    test(-1,worldToPoint(value("micX"),value("micY")),24.f);
-    test(-3,leadPosition(),26.f);
+    test(-1,worldToPoint(value("micX"),value("micY")));
+    // Give the lead priority when her body overlaps the mic ring, as in the original JS.
+    if(pos.getDistanceFrom(leadPosition())<27.f)found=-3;
     return found;
 }
 void StageView::startGesture(int i) {
@@ -365,12 +282,10 @@ void StageView::finishGesture(int i) {
     }
 }
 void StageView::moveMic(float x,float y) {
-    const auto mic=choir::StageGeometry::clampMic({x,y});
-    change("micX",mic.x);change("micY",mic.y);
-    // The lead stays exactly where she was when the drag began: her offsets are re-derived from that spot, and the parameter ranges
-    // are wide enough (StageGeometry.h) that this never has to clamp.
-    const auto offset=choir::StageGeometry::offsetFor(leadStart,mic);
-    change("leadX",offset.x);change("leadY",offset.y);
+    change("micX",x);change("micY",y);
+    // Keep the white lead stationary in world space when the mic moves.
+    change("leadX",juce::jlimit(-9.f,9.f,leadStartX+micStartX-x));
+    change("leadY",juce::jlimit(-5.f,12.f,leadStartY+micStartY-y));
 }
 
 void StageView::paint(juce::Graphics& g) {
@@ -384,19 +299,11 @@ void StageView::paint(juce::Graphics& g) {
         juce::Graphics::ScopedSaveState keep(g);
         juce::Path clip;clip.addRoundedRectangle(r,10.f);
         g.reduceClipRegion(clip);
-        followScene();
-        const auto picture=[&](const juce::Image& image,float opacity) {
-            if(!image.isValid()) return;
-            g.setOpacity(opacity);
-            g.drawImageWithin(image,(int)r.getX(),(int)r.getY(),(int)r.getWidth(),(int)r.getHeight(),
+        if(cathedral.isValid())
+            g.drawImageWithin(cathedral,(int)r.getX(),(int)r.getY(),(int)r.getWidth(),(int)r.getHeight(),
                               juce::RectanglePlacement(juce::RectanglePlacement::xMid|juce::RectanglePlacement::yMid
                                                        |juce::RectanglePlacement::fillDestination));
-        };
-        g.setColour(kBg);g.fillRect(r);
-        const float fade=scenes::fadeProgress(juce::Time::getMillisecondCounterHiRes()-fadeStartMs);
-        if(fade<1.f) picture(sceneImage(fromScene),1.f);          // the old room, with the new one fading in over it (400 ms)
-        picture(sceneImage(shownScene),fade);
-        if(kStageTint.getAlpha()>0) {g.setColour(kStageTint);g.fillRect(r);}   // the theme's wash over the picture (gold has none, so its picture is untouched)
+        else {g.setColour(kBg);g.fillRect(r);}
         // the floor fades to black
         g.setGradientFill(juce::ColourGradient(juce::Colours::transparentBlack,r.getCentreX(),r.getY()+r.getHeight()*.35f,
                                                kBg.withAlpha(.9f),r.getCentreX(),r.getBottom(),false));
@@ -409,13 +316,13 @@ void StageView::paint(juce::Graphics& g) {
         shaft.lineTo(r.getCentreX()+r.getWidth()*.19f,r.getBottom());
         shaft.lineTo(r.getCentreX()-r.getWidth()*.19f,r.getBottom());
         shaft.closeSubPath();
-        const juce::Colour light=kLight;
+        const juce::Colour light(0xffffe6a8);
         g.setGradientFill(juce::ColourGradient(light.withAlpha(.10f+.14f*input),r.getCentreX(),shaftTop,
                                                light.withAlpha(0.f),r.getCentreX(),r.getBottom(),false));
         g.fillPath(shaft);
         // dark corners
         g.setGradientFill(juce::ColourGradient(juce::Colours::transparentBlack,r.getCentreX(),r.getCentreY(),
-                                               kVignette.withAlpha(.78f),r.getX(),r.getY(),true));
+                                               juce::Colour(0xff040205).withAlpha(.78f),r.getX(),r.getY(),true));
         g.fillRect(r);
         // drifting dust in the light
         const auto hash=[](int i,int k) {const float s=std::sin((float)(i*127+k*311))*43758.547f;return s-std::floor(s);};
@@ -426,7 +333,7 @@ void StageView::paint(juce::Graphics& g) {
             const float edge=1.f-std::abs(px-r.getCentreX())/(r.getWidth()*.5f);
             const float twinkle=.5f+.5f*std::sin(t*1.7f+(float)i*2.1f);
             const float alpha=(.10f+.32f*hash(i,4))*twinkle*(.25f+.75f*edge)*(.6f+.8f*input);
-            g.setColour(kDust.withAlpha(juce::jlimit(0.f,1.f,alpha)));
+            g.setColour(juce::Colour(0xffffeec0).withAlpha(juce::jlimit(0.f,1.f,alpha)));
             const float size=1.1f+1.6f*hash(i,5);
             g.fillEllipse(px,py,size,size);
         }
@@ -464,21 +371,13 @@ void StageView::paint(juce::Graphics& g) {
             g.drawText(sectionNames[i],state!=0?pill.withTrimmedRight(11.f):pill,juce::Justification::centred);
             if(state!=0) {      // S = soloed, M = muted
                 const juce::Rectangle<float> badge(pill.getRight()-15.f,pill.getY()+1.f,14.f,14.f);
-                g.setColour(state==1?kGold:kMuteBadge);g.fillEllipse(badge);
+                g.setColour(state==1?kGold:juce::Colour(0xff8c2f3a));g.fillEllipse(badge);
                 g.setColour(state==1?kInk:kCream);g.setFont(boldFont(9.f));
                 g.drawText(state==1?"S":"M",badge,juce::Justification::centred);
             }
         }
         // the lead: glows while you sing, breathes while her pitch is locked
         const auto lead=leadPosition();
-        {   // a faint ring where she stands at home (leadX 0, leadY 0.4): double-click her to go back. Hidden while she is there.
-            const auto homeWorld=choir::StageGeometry::home(micWorld());
-            const auto homePoint=worldToPoint(homeWorld.x,homeWorld.y);
-            if(homePoint.getDistanceFrom(lead)>3.f) {
-                g.setColour(kLead.withAlpha(.30f));g.drawEllipse(homePoint.x-17.f,homePoint.y-17.f,34.f,34.f,1.f);
-                g.setColour(kLead.withAlpha(.30f));g.fillEllipse(homePoint.x-1.5f,homePoint.y-1.5f,3.f,3.f);
-            }
-        }
         const float confidence=juce::jlimit(0.f,1.f,processor.meters().pitchConfidence.load(std::memory_order_relaxed));
         const float locked=confidence>.5f?(confidence-.5f)*2.f:0.f;               // 0..1 once the tracker is sure of a pitch
         const float breathe=1.f+.12f*locked*std::sin(t*5.f);
@@ -486,7 +385,7 @@ void StageView::paint(juce::Graphics& g) {
         g.fillEllipse(lead.x-48.f*breathe,lead.y-48.f*breathe,96.f*breathe,96.f*breathe);
         if(locked>0.f) {g.setColour(kGold.withAlpha(.18f+.5f*locked));g.drawEllipse(lead.x-30.f,lead.y+13.f,60.f,16.f,1.3f);}   // a gold ring at her feet while the pitch is locked
         if(hover==-3||dragging==-3) {g.setColour(kLead.withAlpha(.8f));g.drawEllipse(lead.x-27.f,lead.y-29.f,54.f,58.f,1.3f);}
-        drawFigure(g,lead,kLeadFigure,20.f,input*(.6f+.4f*std::sin(t*8.f)));
+        drawFigure(g,lead,juce::Colour(0xffeee8d9),20.f,input*(.6f+.4f*std::sin(t*8.f)));
         {
             const juce::Rectangle<float> pill(lead.x-24.f,lead.y+20.f,48.f,15.f);
             g.setColour(kBg.withAlpha(.62f));g.fillRoundedRectangle(pill,7.5f);
@@ -535,30 +434,24 @@ void StageView::mouseDown(const juce::MouseEvent& e) {
     const int tag=hitPill(e.position);
     if(tag>=0) {toggleState(tag,e.mods.isPopupMenu()||e.mods.isShiftDown());return;}
     dragging=hit(e.position);
-    if(dragging==-2) return;
-    // Remember where the thing is relative to the pointer, so it moves with the pointer instead of jumping its centre to it.
-    const auto pointer=pointToWorld(e.position);
-    choir::StagePoint thing;
-    if(dragging==-1) {thing=micWorld();leadStart=leadWorld();}
-    else if(dragging==-3) {thing=leadWorld();leadStart=thing;}
-    else {const auto s=juce::String(dragging);thing={value("x"+s),value("y"+s)};}
-    grabX=thing.x-pointer.x;grabY=thing.y-pointer.y;
-    startGesture(dragging);   // no mouseDrag() here: a click must not move anything
+    if(dragging!=-2) {
+        micStartX=value("micX");micStartY=value("micY");
+        leadStartX=value("leadX");leadStartY=value("leadY");
+        startGesture(dragging);mouseDrag(e);
+    }
 }
 void StageView::mouseDrag(const juce::MouseEvent& e) {
     if(dragging==-2)return;
-    const auto pointer=pointToWorld(e.position);
-    const choir::StagePoint target {pointer.x+grabX,pointer.y+grabY};
+    const auto p=pointToWorld(e.position);
     if(dragging==-1) {
-        moveMic(target.x,target.y);
+        moveMic(juce::jlimit(-9.f,9.f,p.x),juce::jlimit(-8.f,8.f,p.y));
     } else if(dragging==-3) {
-        const auto lead=choir::StageGeometry::clampLead(target);
-        const auto offset=choir::StageGeometry::offsetFor(lead,micWorld());
-        change("leadX",offset.x);change("leadY",offset.y);
+        change("leadX",juce::jlimit(-9.f,9.f,p.x-value("micX")+2.35f));
+        change("leadY",juce::jlimit(-5.f,12.f,p.y-value("micY")-1.9f));
     } else {
         const auto s=juce::String(dragging);
-        change("x"+s,juce::jlimit(-9.f,9.f,target.x));
-        change("y"+s,juce::jlimit(.7f,11.f,target.y));
+        change("x"+s,juce::jlimit(-9.f,9.f,p.x));
+        change("y"+s,juce::jlimit(.7f,11.f,p.y));
     }
 }
 void StageView::mouseUp(const juce::MouseEvent&) {finishGesture(dragging);dragging=-2;}
@@ -571,7 +464,7 @@ void StageView::mouseDoubleClick(const juce::MouseEvent& e) {
     if(what==-3) {
         startGesture(-3);resetParameter("leadX");resetParameter("leadY");finishGesture(-3);
     } else if(what==-1) {
-        leadStart=leadWorld();   // she stays put while the mic goes home
+        micStartX=value("micX");micStartY=value("micY");leadStartX=value("leadX");leadStartY=value("leadY");
         startGesture(-1);moveMic(0.f,0.f);finishGesture(-1);
     } else if(what>=0) {
         const auto s=juce::String(what);
@@ -583,7 +476,6 @@ void StageView::mouseDoubleClick(const juce::MouseEvent& e) {
 OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProcessor& p)
     :AudioProcessorEditor(&p),processor(p),stage(p),meterStrip(p),roll(p) {
     setLookAndFeel(&lnf);
-    omni::applyTheme(loadSavedTheme());lnf.refreshColours();appliedTheme=omni::themeIndex();   // before any component takes a colour
     {
         int width=860,height=600;
         loadWindowSize(width,height);
@@ -624,9 +516,6 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
     modeButton.setTooltip("Switch between Easy (just the big choir controls) and Pro (everything).");
     modeButton.onClick=[this]{processor.setProUi(!processor.proUi());applyMode();};
     addAndMakeVisible(surpriseButton);addAndMakeVisible(modeButton);
-    addAndMakeVisible(skullButton);
-    skullButton.setTooltip("Change the colours: gold, blood red, neon green or ice blue. Your choice is remembered.");
-    skullButton.onClick=[this] {showThemeMenu();};
     statusLabel.setColour(juce::Label::textColourId,kMuted);
     statusLabel.setFont(plainFont(11.f));
     statusLabel.setJustificationType(juce::Justification::centredLeft);
@@ -645,11 +534,11 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
     }
 
     // ---- MAIN: five knobs and five faders are all most people need
-    addFader("SOPRANO","gain0",0,"Soprano level. 0 dB is the default.",.83f);
-    addFader("ALTO","gain1",1,"Alto level. 0 dB is the default.",.83f);
-    addFader("TENOR","gain2",2,"Tenor level. 0 dB is the default.",.83f);
-    addFader("BASS","gain3",3,"Bass level. 0 dB is the default.",.83f);
-    addFader("LEAD","leadGain",4,"Your own voice, placed on the stage. 0 dB is unity.",1.f);
+    addFader("SOPRANO","gain0",kSection[0],"Soprano level. 0 dB is the default.",.83f);
+    addFader("ALTO","gain1",kSection[1],"Alto level. 0 dB is the default.",.83f);
+    addFader("TENOR","gain2",kSection[2],"Tenor level. 0 dB is the default.",.83f);
+    addFader("BASS","gain3",kSection[3],"Bass level. 0 dB is the default.",.83f);
+    addFader("LEAD","leadGain",kLead,"Your own voice, placed on the stage. 0 dB is unity.",1.f);
     addKnob("CHOIR SIZE","choirSize",pageMain,"One knob for how big the choir sounds: tighter, drier and closer below the middle, looser, wetter and wider above it. The detailed knobs keep their own meaning.",ValueFormat::Percent,1.f,true);
     addKnob("CHOIR MIX","mix",pageMain,"Choir against your own voice. 0% is only your voice, 100% is only the choir. With AUTO LEVEL on, the loudness stays steady as you move it.",ValueFormat::Percent,1.f,true);
     addKnob("ENSEMBLE","ensemble",pageMain,"How far the singers in a section drift apart in tuning: more sounds like a bigger choir.",ValueFormat::Percent);
@@ -777,7 +666,7 @@ void OmniChoirAudioProcessorEditor::addKnob(const juce::String& title,const juce
     slots.push_back({page,Kind::Knob,c.get(),easy});
     owned.push_back(std::move(c));
 }
-void OmniChoirAudioProcessorEditor::addFader(const juce::String& title,const juce::String& id,int accent,const juce::String& tip,float unity) {
+void OmniChoirAudioProcessorEditor::addFader(const juce::String& title,const juce::String& id,juce::Colour accent,const juce::String& tip,float unity) {
     auto c=std::make_unique<Fader>(processor,title,id,accent,tip,unity);
     addAndMakeVisible(*c);
     slots.push_back({pageMain,Kind::Fader,c.get(),false});
@@ -911,7 +800,7 @@ void PianoRoll::mouseWheelMove(const juce::MouseEvent&,const juce::MouseWheelDet
 }
 void PianoRoll::paint(juce::Graphics& g) {
     const auto area=getLocalBounds().toFloat();
-    g.setColour(kRollBg);g.fillRoundedRectangle(area,8.f);
+    g.setColour(juce::Colour(0xff0e090c));g.fillRoundedRectangle(area,8.f);
     g.setColour(kStroke);g.drawRoundedRectangle(area.reduced(.5f),8.f,1.f);
     const auto& session=processor.listenSession();
     const auto state=session.state();
@@ -921,7 +810,7 @@ void PianoRoll::paint(juce::Graphics& g) {
     };
     if(state==choir::ListenSession::Listening) {
         const float pulse=.5f+.5f*std::sin((float)(juce::Time::getMillisecondCounterHiRes()*.006));
-        g.setColour(kRecord.withAlpha(.5f+.5f*pulse));g.fillEllipse(area.getCentreX()-60.f,area.getCentreY()-26.f,10.f,10.f);
+        g.setColour(juce::Colour(0xffe0485a).withAlpha(.5f+.5f*pulse));g.fillEllipse(area.getCentreX()-60.f,area.getCentreY()-26.f,10.f,10.f);
         message("LISTENING  "+juce::String(session.capturedSeconds(),1)+" s\nPlay your take through the plugin from the start, then press STOP.",kCream);
         return;
     }
@@ -1083,15 +972,6 @@ void OmniChoirAudioProcessorEditor::handleStyleMenu(int id) {
         startTour();
     }
 }
-void OmniChoirAudioProcessorEditor::showThemeMenu() {
-    juce::PopupMenu menu;
-    for(int i=0;i<theme::kNumThemes;++i) menu.addItem(100+i,juce::String(theme::get(i).name),true,i==omni::themeIndex());
-    juce::Component::SafePointer<OmniChoirAudioProcessorEditor> safe(this);
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&skullButton),[safe](int result) {
-        if(safe==nullptr || result<100 || result>=100+theme::kNumThemes) return;
-        safe->setTheme(result-100);
-    });
-}
 void OmniChoirAudioProcessorEditor::startTour() {
     if(tour!=nullptr) return;
     std::vector<TourOverlay::Step> steps;
@@ -1107,7 +987,6 @@ void OmniChoirAudioProcessorEditor::startTour() {
     }
     add(&listenEasyButton,nullptr,"LISTEN, THEN CHOIR","Press LISTEN, play your vocal through the plugin from the start, then press it again. The plugin works out your notes and the choir sings them.");
     add(&modeButton,&surpriseButton,"EASY OR PRO","Easy shows just the big controls. Pro shows everything. SURPRISE ME picks a random musical style.");
-    add(&skullButton,nullptr,"MAKE IT YOURS","Click the skull to change the colours: gold, blood red, neon green or ice blue. SkellyChoir remembers your choice.");
     if(steps.empty()) return;
     tour=std::make_unique<TourOverlay>(std::move(steps),[this]{finishTour();});
     addAndMakeVisible(*tour);
@@ -1121,32 +1000,6 @@ void OmniChoirAudioProcessorEditor::finishTour() {
     juce::Component::SafePointer<OmniChoirAudioProcessorEditor> safe(this);
     juce::MessageManager::callAsync([safe]{ if(safe!=nullptr) safe->tour.reset(); });   // not from inside the overlay's own button
 }
-int OmniChoirAudioProcessorEditor::loadSavedTheme() {
-    const auto file=settingsFolder().getChildFile("theme.txt");
-    if(!file.existsAsFile()) return theme::kDefaultTheme;
-    return theme::fromFileText(file.loadFileAsString().toStdString());   // unknown or damaged: the original gold
-}
-void OmniChoirAudioProcessorEditor::saveTheme(int index) {
-    const auto folder=settingsFolder();
-    folder.createDirectory();
-    folder.getChildFile("theme.txt").replaceWithText(juce::String(theme::toFileText(index)));
-}
-void OmniChoirAudioProcessorEditor::setTheme(int index) {
-    omni::applyTheme(index);
-    refreshThemedColours();
-    saveTheme(omni::themeIndex());
-}
-void OmniChoirAudioProcessorEditor::refreshThemedColours() {
-    appliedTheme=omni::themeIndex();
-    lnf.refreshColours();
-    for(auto& item:owned) if(auto* themed=dynamic_cast<Themed*>(item.get())) themed->refreshColours();
-    statusLabel.setColour(juce::Label::textColourId,kMuted);
-    stemsStatus.setColour(juce::Label::textColourId,kCream);
-    stemsHelp.setColour(juce::Label::textColourId,kMuted);
-    takeStatus.setColour(juce::Label::textColourId,kCream);
-    notes.updateContent();
-    repaint();
-}
 void OmniChoirAudioProcessorEditor::saveWindowSize() {
     const auto folder=settingsFolder();
     folder.createDirectory();
@@ -1155,7 +1008,7 @@ void OmniChoirAudioProcessorEditor::saveWindowSize() {
 void OmniChoirAudioProcessorEditor::paintListBoxItem(int index,juce::Graphics& g,int width,int height,bool selected) {
     if(index<0||index>=(int)visibleScore.notes.size())return;
     const auto& e=visibleScore.notes[(size_t)index];
-    g.fillAll(selected?kListSel:(index%2?kPanel:kPanel2.darker(.25f)));
+    g.fillAll(selected?juce::Colour(0xff6b4a2c):(index%2?kPanel:kPanel2.darker(.25f)));
     const auto name=[](int midi) {
         return juce::String(pitchClasses[(midi%12+12)%12])+juce::String(midi/12-1);
     };
@@ -1169,7 +1022,6 @@ void OmniChoirAudioProcessorEditor::paintListBoxItem(int index,juce::Graphics& g
     }
 }
 void OmniChoirAudioProcessorEditor::timerCallback() {
-    if(omni::themeIndex()!=appliedTheme) refreshThemedColours();   // another open instance of the plugin changed the theme
     juce::String msg="Drag the singers, your lead and the mic on the stage. Double-click one to put it back.";
     // ---- LISTEN: the take is captured, analysed and then sung
     auto& session=processor.listenSession();
@@ -1243,13 +1095,13 @@ void OmniChoirAudioProcessorEditor::timerCallback() {
 }
 void OmniChoirAudioProcessorEditor::paint(juce::Graphics& g) {
     g.fillAll(kBg);
-    g.setGradientFill(juce::ColourGradient(kHeaderTop,(float)getWidth()*.5f,0.f,kBg,(float)getWidth()*.5f,130.f,false));
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff2f1b15),(float)getWidth()*.5f,0.f,kBg,(float)getWidth()*.5f,130.f,false));
     g.fillRect(0,0,getWidth(),130);
     g.setGradientFill(juce::ColourGradient(kGoldHi,0.f,6.f,kGoldLo,0.f,40.f,false));
-    g.setFont(serifFont(titleLayout.fontHeight));
-    g.drawText(branding::kTitle,14,5,(int)std::ceil(titleLayout.titleWidth)+8,36,juce::Justification::centredLeft);
+    g.setFont(serifFont(31.f));
+    g.drawText("OMNICHOIR",14,5,250,36,juce::Justification::centredLeft);
     g.setColour(kCream);g.setFont(boldFont(9.f));
-    g.drawText(branding::kSubtitle,16,41,juce::jmax(120,keyBox.getX()-16-6),14,juce::Justification::centredLeft);
+    g.drawText("LIVE CHOIRIFICATION / SCAN & RENDER",16,41,260,14,juce::Justification::centredLeft);
     g.setColour(kGold.withAlpha(.30f));g.drawLine(14.f,62.f,(float)getWidth()-14.f,62.f,1.f);
     g.setColour(kPanel.withAlpha(.85f));g.fillRoundedRectangle(deckBounds.toFloat(),12.f);
     g.setColour(kStroke);g.drawRoundedRectangle(deckBounds.toFloat().reduced(.5f),12.f,1.f);
@@ -1301,13 +1153,6 @@ void OmniChoirAudioProcessorEditor::resized() {
     scaleBox.setBounds(header.removeFromRight(124).withSizeKeepingCentre(124,30));
     header.removeFromRight(6);
     keyBox.setBounds(header.removeFromRight(78).withSizeKeepingCentre(78,30));
-    {   // the title shrinks if it must so that title + skull always end before the first control (UI/TitleLayout.h)
-        juce::GlyphArrangement glyphs;
-        glyphs.addLineOfText(serifFont(titlelayout::kBaseFont),branding::kTitle,0.f,0.f);
-        titleLayout=titlelayout::compute(glyphs.getBoundingBox(0,-1,true).getWidth(),(float)keyBox.getX());
-        const int size=juce::roundToInt(titleLayout.skullSize);
-        skullButton.setBounds(juce::roundToInt(titleLayout.skullX),5+(36-size)/2,size,size);
-    }
 
     const int footerTop=h-footerHeight-6;
     const int controlsTop=footerTop-6-controlsHeight;
