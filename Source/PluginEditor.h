@@ -1,6 +1,11 @@
 #pragma once
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "StageGeometry.h"
+#include "Theme.h"
+#include "Scenes.h"
+#include <array>
+#include "UI/TitleLayout.h"
 #include "Offline/TakeWorker.h"
 #include "UI/OmniLookAndFeel.h"
 #include <array>
@@ -24,9 +29,14 @@ public:
     void mouseDoubleClick(const juce::MouseEvent&) override;
 private:
     OmniChoirAudioProcessor& processor;
-    juce::Image cathedral;
+    std::array<juce::Image,scenes::kNumScenes> sceneImages;   // loaded on first use; Default and Cathedral share one picture
+    int shownScene=0,fromScene=0;                              // the picture on show, and the one fading out
+    double fadeStartMs=-1.0e9;
+    const juce::Image& sceneImage(int index);
+    void followScene();                                        // starts a crossfade when the processor's scene changed
     int dragging=-2, hover=-2, hoverPill=-2;   // -2 none, -1 mic, -3 lead, 0..3 soprano..bass (hoverPill: 0..3, the name tags)
-    float micStartX=0,micStartY=0,leadStartX=0,leadStartY=0;
+    float grabX=0,grabY=0;            // where the thing was relative to the pointer when the drag began (world metres): nothing snaps to the cursor
+    choir::StagePoint leadStart;      // where the lead stood (on the stage) when a mic drag began: she stays there while the mic moves
     juce::Point<float> worldToPoint(float,float) const;
     juce::Point<float> pointToWorld(juce::Point<float>) const;
     juce::Point<float> leadPosition() const;
@@ -34,7 +44,9 @@ private:
     float value(const juce::String&) const;
     void change(const juce::String&,float);
     void resetParameter(const juce::String&);
-    void moveMic(float x,float y);
+    choir::StagePoint micWorld() const;
+    choir::StagePoint leadWorld() const;   // where the lead is drawn: mic + display shift + (leadX, leadY)
+    void moveMic(float x,float y);          // clamps the mic, then re-derives leadX/leadY from leadStart so she does not move
     int hit(juce::Point<float>) const;
     juce::Rectangle<float> pillBounds(int section) const;   // the name tag under a section: click to solo, right-click to mute
     int hitPill(juce::Point<float>) const;
@@ -74,6 +86,12 @@ private:
 };
 
 // A short first-run tour: dims the editor and points at one control at a time.
+// The skull in the header: click it to choose a theme. Painted from the shape list in UI/SkullShape.h.
+class SkullButton final : public juce::Button {
+public:
+    SkullButton() : juce::Button("theme") {setMouseCursor(juce::MouseCursor::PointingHandCursor);}
+    void paintButton(juce::Graphics& g,bool shouldDrawButtonAsHighlighted,bool shouldDrawButtonAsDown) override;
+};
 class TourOverlay final : public juce::Component {
 public:
     struct Step { juce::Component* target; juce::Component* alsoTarget; juce::String title,text; };
@@ -100,6 +118,7 @@ public:
     void resized() override;
     // for tools/screenshots.cpp: show a given mode and tab, and drop the first-run tour
     void showForScreenshot(bool proMode,int tab) {processor.setProUi(proMode);currentTab=tab;applyMode();}
+    void showThemeForScreenshot(int index) {omni::applyTheme(index);refreshThemedColours();}   // like the skull menu, but nothing is saved to theme.txt
     void dismissTour() {tour.reset();}
 private:
     enum class Kind { Knob, Fader, Side };
@@ -121,6 +140,9 @@ private:
     juce::ComboBox presetBox;
     juce::Label statusLabel;
     juce::TextButton surpriseButton {"SURPRISE ME"}, modeButton {"EASY"};
+    SkullButton skullButton;                       // top of the header, right of the title: the theme changer
+    titlelayout::Result titleLayout {titlelayout::kBaseFont,250.f,titlelayout::kSkull,272.f};
+    void showThemeMenu();
     bool pro=false;
 
     // the pages
@@ -130,7 +152,7 @@ private:
     int currentTab=pageMain;
     juce::Rectangle<int> deckBounds;
     void addKnob(const juce::String& title,const juce::String& id,int page,const juce::String& tip,ValueFormat format,float unity=1.f,bool easy=false);
-    void addFader(const juce::String& title,const juce::String& id,juce::Colour accent,const juce::String& tip,float unity);
+    void addFader(const juce::String& title,const juce::String& id,int accent,const juce::String& tip,float unity);   // accent: 0..3 sections, 4 lead
     void addChoice(const juce::String& title,const juce::String& id,int page,const juce::String& tip,bool easy=false);
     void addSide(int page,juce::Component&,bool easy=false,bool easyOnly=false);
     void applyMode();   // Easy or Pro
@@ -147,6 +169,12 @@ private:
     std::array<juce::TextButton,8> listenAdjust;
     int lastListenState=0, lastKey=-1, lastScale=-1, lastHarmony=-1;
     void listenClicked();
+    // themes: the colours follow omni::applyTheme; the choice is remembered in theme.txt
+    int appliedTheme=-1;
+    void setTheme(int index);              // apply, refresh every themed colour, remember
+    void refreshThemedColours();           // re-reads the palette into every component that took a colour at construction
+    static int loadSavedTheme();
+    static void saveTheme(int index);
     // styles, the first-run tour and the remembered window size
     std::vector<juce::File> styleFiles;
     void rebuildStyleMenu();

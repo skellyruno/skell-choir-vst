@@ -1,4 +1,6 @@
 #pragma once
+#include "Branding.h"
+#include "Scenes.h"
 #include <JuceHeader.h>
 #include "StagedChoir.h"
 #include "StagePresets.h"
@@ -20,7 +22,7 @@ public:
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
-    const juce::String getName() const override { return "OmniChoir FX"; }
+    const juce::String getName() const override { return branding::kProductName; }
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -47,6 +49,7 @@ public:
     void clearImpulseResponse();
     bool hasImpulseResponse() const { return staged.hasImpulseResponse(); }
     juce::String impulseResponseName() const { return irName; }
+    int currentScene() const {return scene.load();}   // the stage picture: the last stage preset applied (Scenes.h)
     void applyStagePreset(int index);               // placement + room only; never harmony, mix, lead level or output
     // v0.7 (message thread)
     static constexpr int kNumBuiltInRooms = 3;
@@ -56,6 +59,7 @@ public:
     void surpriseMe();                               // a random but musical style
     int chordNote(int section) const { return chordView[(size_t) section].load(std::memory_order_relaxed); }   // the stage shows the chord being held (-1 = none)
     // v0.8: your own styles (plain-text .omnistyle files in the user's application-data folder)
+    static juce::File settingsFolder();   // per user: styles, window size, tour flag, theme. Copies the pre-SkellyChoir folder in once.
     static juce::File userStyleFolder();
     juce::Array<juce::File> userStyleFiles() const;
     bool saveStyleFile(const juce::File& file);   // the current sound: never your lead level, output, key, mode or solo/mute
@@ -77,6 +81,7 @@ private:
     choir::StagedChoir staged;   // v0.6: 16 singer layers -> faithful stage (mic arrays, reflections, FDN) -> hall -> lead
     std::atomic<bool> scanRequested { false }, restoreRequested { false };
     std::atomic<int> visibleStatus { 0 }, savedRoot { 0 };
+    std::atomic<int> scene { 0 };   // index into scenes::kScenes; only the stage picture follows it, never the sound
     std::atomic<float> visibleProgress { 0 }, visiblePitch { -1 }, visibleRms { 0 };
     struct RawParameters {
         std::array<std::atomic<float>*,4> gains {}, xs {}, ys {};

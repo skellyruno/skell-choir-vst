@@ -30,14 +30,16 @@ struct StyleFileData
 {
     std::string name;
     std::vector<std::pair<std::string,float>> values;
+    int scene = -1;   // the stage picture (Scenes.h), or -1 for "leave it as it is"
 };
 
 // "OmniChoirStyle 1", then "name=...", then one "id=value" per line
-inline std::string writeStyleFile(const std::string& name, const std::vector<std::pair<std::string,float>>& values)
+inline std::string writeStyleFile(const std::string& name, const std::vector<std::pair<std::string,float>>& values, int scene = -1)
 {
     std::string out = "OmniChoirStyle 1\nname=";
     for (char c : name) if (c != '\n' && c != '\r') out += c;
     out += "\n";
+    if (scene >= 0 && scene < 8) out += "scene=" + std::to_string(scene) + "\n";   // 8 = scenes::kNumScenes (scene_tests.cpp checks they agree)
     for (const auto& v : values)
     {
         if (!isUserStyleId(v.first) || !std::isfinite(v.second)) continue;
@@ -65,6 +67,12 @@ inline bool parseStyleFile(const std::string& text, StyleFileData& out)
         if (key == "name")
         {
             for (char c : value) if ((unsigned char) c >= 32 && (unsigned char) c != 127 && out.name.size() < 60) out.name.push_back(c);
+            continue;
+        }
+        if (key == "scene")
+        {
+            char* end = nullptr; const long n = std::strtol(value.c_str(), &end, 10);
+            if (out.scene < 0 && end != value.c_str() && *end == 0 && n >= 0 && n < 8) out.scene = (int) n;   // junk or out of range is ignored; the first one wins
             continue;
         }
         if (!isUserStyleId(key)) continue;
