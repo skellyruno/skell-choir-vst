@@ -18,7 +18,7 @@ endif()
 # Pin SkellCore shared protocol. Never use sockets from audio callbacks.
 FetchContent_Declare(SkellCoreShared
     GIT_REPOSITORY https://github.com/skellyruno/skell-vst-template.git
-    GIT_TAG 3306ad495c93e062e39b8abbf079534b0b53da4e
+    GIT_TAG 9a014a7c143f3d96f1217b9c80519f5469818ae8
     SOURCE_SUBDIR SkellCore)
 FetchContent_MakeAvailable(SkellCoreShared)
 
