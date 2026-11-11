@@ -3,6 +3,7 @@
 #include "PluginProcessor.h"
 #include "Offline/TakeWorker.h"
 #include "UI/OmniLookAndFeel.h"
+#include <SkellCore/GuidedTour.h>
 #include <array>
 #include <functional>
 #include <memory>
@@ -73,23 +74,6 @@ private:
     float xAt(double t) const;
 };
 
-// A short first-run tour: dims the editor and points at one control at a time.
-class TourOverlay final : public juce::Component {
-public:
-    struct Step { juce::Component* target; juce::Component* alsoTarget; juce::String title,text; };
-    TourOverlay(std::vector<Step> steps,std::function<void()> onFinished);
-    void paint(juce::Graphics&) override;
-    void resized() override;
-    void mouseDown(const juce::MouseEvent&) override {}   // swallow clicks: the editor behind is not touched during the tour
-private:
-    std::vector<Step> steps;
-    size_t index=0;
-    std::function<void()> finished;
-    juce::TextButton next {"NEXT"}, skip {"SKIP"};
-    juce::Rectangle<int> targetBounds() const;
-    juce::Rectangle<int> bubbleBounds() const;
-};
-
 class OmniChoirAudioProcessorEditor final : public juce::AudioProcessorEditor,
                                            private juce::Timer,
                                            private juce::ListBoxModel {
@@ -100,7 +84,7 @@ public:
     void resized() override;
     // for tools/screenshots.cpp: show a given mode and tab, and drop the first-run tour
     void showForScreenshot(bool proMode,int tab) {processor.setProUi(proMode);currentTab=tab;applyMode();}
-    void dismissTour() {tour.reset();}
+    void dismissTour() {if(tour)tour->dismiss();}
 private:
     enum class Kind { Knob, Fader, Side };
     enum Page { pageMain=0, pageRoom, pageVoice, pageFollow, pageListen, pageTake, pageStems, numPages };
@@ -151,9 +135,8 @@ private:
     std::vector<juce::File> styleFiles;
     void rebuildStyleMenu();
     void handleStyleMenu(int id);
-    std::unique_ptr<TourOverlay> tour;
-    void startTour();
-    void finishTour();
+    std::unique_ptr<skellcore::ui::GuidedTourController> tour;
+    void startTour(bool firstRun=false);
     int sizeTicks=0;
     bool sizeDirty=false;
     void saveWindowSize();

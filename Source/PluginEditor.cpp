@@ -660,7 +660,7 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
         addAndMakeVisible(adjust[(size_t)i]);
     }
     applyMode();
-    if(!settingsFolder().getChildFile("tour-done").existsAsFile()) startTour();   // the first time this user opens the plugin
+    startTour(true); // Shared per-user SkellCore tutorial; preserves old tour-done flag
     startTimerHz(10);
 }
 OmniChoirAudioProcessorEditor::~OmniChoirAudioProcessorEditor() {
@@ -865,56 +865,6 @@ void PianoRoll::paint(juce::Graphics& g) {
     if(playhead>=0) {g.setColour(kGold);const float x=xAt(playhead);g.drawLine(x,0.f,x,area.getBottom(),1.6f);}
 }
 
-// ================================================================================================ tour
-TourOverlay::TourOverlay(std::vector<Step> s,std::function<void()> onFinished):steps(std::move(s)),finished(std::move(onFinished)) {
-    addAndMakeVisible(next);addAndMakeVisible(skip);
-    next.setComponentID("action");skip.setComponentID("action");
-    next.onClick=[this] {
-        if(++index>=steps.size()) {if(finished)finished();return;}
-        next.setButtonText(index+1==steps.size()?"DONE":"NEXT");
-        resized();repaint();
-    };
-    skip.onClick=[this]{if(finished)finished();};
-    if(steps.size()==1) next.setButtonText("DONE");
-}
-juce::Rectangle<int> TourOverlay::targetBounds() const {
-    if(index>=steps.size()) return {};
-    auto r=steps[index].target->getBounds();
-    if(steps[index].alsoTarget!=nullptr) r=r.getUnion(steps[index].alsoTarget->getBounds());
-    return r.expanded(6);
-}
-juce::Rectangle<int> TourOverlay::bubbleBounds() const {
-    const auto target=targetBounds();
-    const int width=juce::jmin(330,getWidth()-24),height=122;
-    const bool below=target.getBottom()+height+14<getHeight();
-    const int y=below?target.getBottom()+10:juce::jmax(8,target.getY()-height-10);
-    const int x=juce::jlimit(12,juce::jmax(12,getWidth()-width-12),target.getCentreX()-width/2);
-    return {x,y,width,height};
-}
-void TourOverlay::resized() {
-    const auto bubble=bubbleBounds();
-    next.setBounds(bubble.getRight()-82,bubble.getBottom()-36,72,26);
-    skip.setBounds(bubble.getRight()-160,bubble.getBottom()-36,72,26);
-}
-void TourOverlay::paint(juce::Graphics& g) {
-    if(index>=steps.size()) return;
-    const auto target=targetBounds().toFloat();
-    juce::Path dim;
-    dim.addRectangle(getLocalBounds().toFloat());
-    dim.addRoundedRectangle(target,10.f);
-    dim.setUsingNonZeroWinding(false);          // the target is a hole in the dimming
-    g.setColour(juce::Colours::black.withAlpha(.74f));g.fillPath(dim);
-    g.setColour(kGold);g.drawRoundedRectangle(target,10.f,2.f);
-    const auto bubble=bubbleBounds().toFloat();
-    g.setColour(kPanel);g.fillRoundedRectangle(bubble,12.f);
-    g.setColour(kGold);g.drawRoundedRectangle(bubble.reduced(.5f),12.f,1.4f);
-    g.setFont(boldFont(13.f));g.drawText(steps[index].title,bubble.reduced(14.f,8.f).withHeight(20.f),juce::Justification::centredLeft);
-    g.setColour(kCream);g.setFont(plainFont(12.f));
-    g.drawFittedText(steps[index].text,bubble.toNearestInt().reduced(14,0).withTrimmedTop(32).withTrimmedBottom(42),juce::Justification::topLeft,4);
-    g.setColour(kMuted);g.setFont(boldFont(9.5f));
-    g.drawText(juce::String((int)index+1)+" / "+juce::String((int)steps.size()),bubble.reduced(14.f,0.f).withTrimmedTop(bubble.getHeight()-34.f).withHeight(26.f),juce::Justification::centredLeft);
-}
-
 // ============================================================================================== listen, styles, tour
 void OmniChoirAudioProcessorEditor::listenClicked() {
     auto& session=processor.listenSession();
@@ -979,33 +929,36 @@ void OmniChoirAudioProcessorEditor::handleStyleMenu(int id) {
         startTour();
     }
 }
-void OmniChoirAudioProcessorEditor::startTour() {
-    if(tour!=nullptr) return;
-    std::vector<TourOverlay::Step> steps;
-    const auto add=[&](juce::Component* target,juce::Component* also,const char* title,const char* text) {
-        if(target!=nullptr && target->isVisible()) steps.push_back({target,also,title,text});
-    };
-    add(&stage,nullptr,"YOUR CHOIR","Drag the four sections, your lead voice and the microphone around the stage. Click a section's name to solo it, right-click to mute it.");
-    add(&presetBox,nullptr,"STYLES AND ROOMS","Pick a style for a whole sound in one click, or a room for just the space. You can save your own sounds here too.");
-    add(&scaleBox,&keyBox,"YOUR KEY","Choose your song's key and scale and the choir's harmony stays in key. Leave it on NO SCALE for fixed intervals. Nothing is detected: you choose.");
-    for(auto& slot:slots) if(slot.kind==Kind::Knob && slot.page==pageMain && slot.item->isVisible()) {
-        add(slot.item,nullptr,"HOW BIG","One knob for how big the choir sounds. The knobs next to it set how much choir you hear.");
-        break;
-    }
-    add(&listenEasyButton,nullptr,"LISTEN, THEN CHOIR","Press LISTEN, play your vocal through the plugin from the start, then press it again. The plugin works out your notes and the choir sings them.");
-    add(&modeButton,&surpriseButton,"EASY OR PRO","Easy shows just the big controls. Pro shows everything. SURPRISE ME picks a random musical style.");
-    if(steps.empty()) return;
-    tour=std::make_unique<TourOverlay>(std::move(steps),[this]{finishTour();});
-    addAndMakeVisible(*tour);
-    tour->setBounds(getLocalBounds());
-    tour->toFront(false);
-}
-void OmniChoirAudioProcessorEditor::finishTour() {
-    const auto flag=settingsFolder().getChildFile("tour-done");
-    flag.getParentDirectory().createDirectory();
-    flag.create();                       // seen once: it does not come back by itself
-    juce::Component::SafePointer<OmniChoirAudioProcessorEditor> safe(this);
-    juce::MessageManager::callAsync([safe]{ if(safe!=nullptr) safe->tour.reset(); });   // not from inside the overlay's own button
+void OmniChoirAudioProcessorEditor::startTour(bool firstRun) {
+    if(!tour) tour=std::make_unique<skellcore::ui::GuidedTourController>(
+        *this,"omnichoir-fx",1);
+    // Existing OmniChoir users who already completed the original tour
+    // should NOT receive the same walkthrough again after this migration.
+    if(firstRun && settingsFolder().getChildFile("tour-done").existsAsFile()
+        && skellcore::ui::GuidedTourPreferences::shouldShow("omnichoir-fx",1))
+        (void) skellcore::ui::GuidedTourPreferences::markSeen("omnichoir-fx",1);
+
+    std::vector<skellcore::ui::GuidedTourStep> steps;
+    steps.emplace_back(&stage,"PLACE YOUR CHOIR",
+        "Drag the singers and microphone on the stage. Click section labels to solo.",
+        [this]{selectTab(pageMain);});
+    steps.emplace_back(&presetBox,"CHOOSE A SOUND",
+        "Styles adjust the whole choir sound. Rooms shape the acoustic space.");
+    steps.emplace_back(&scaleBox,"SET YOUR KEY",
+        "Choose the key and scale: the choir follows your choice, not an automatic guess.",
+        std::function<void()>{},&keyBox);
+    steps.emplace_back(&modeButton,"EASY AND PRO",
+        "EASY keeps the essentials visible. PRO reveals the deeper controls.",
+        [this]{selectTab(pageMain);});
+    steps.emplace_back(&listenButton,"LISTEN TO YOUR TAKE",
+        "Press LISTEN, play your vocal through once, then press it again to finish.",
+        [this]{selectTab(pageListen);});
+    steps.emplace_back(&tabs[pageTake],"EDIT THE FULL TAKE",
+        "Use SCAN / EDIT to inspect the detected notes and export your arrangement.");
+    tour->setPalette({kGold,kPanel,kCream,kMuted,juce::Colour(0xd9000000)});
+    tour->setSteps(std::move(steps));
+    if(firstRun)tour->startIfFirstRun();
+    else tour->replay();
 }
 void OmniChoirAudioProcessorEditor::saveWindowSize() {
     const auto folder=settingsFolder();
@@ -1156,7 +1109,7 @@ void OmniChoirAudioProcessorEditor::layoutPage(int page,juce::Rectangle<int> are
 }
 void OmniChoirAudioProcessorEditor::resized() {
     sizeDirty=true;sizeTicks=0;
-    if(tour!=nullptr) tour->setBounds(getLocalBounds());
+    // GuidedTourController tracks editor resizing and tab target changes.
     const int w=getWidth(),h=getHeight(),m=14,headerHeight=62,footerHeight=26,tabsHeight=30;
     const int controlsHeight=juce::jlimit(122,170,(int)((float)h*.215f));
 

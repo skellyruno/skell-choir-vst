@@ -59,6 +59,17 @@ int main(int argc, char** argv)
     const std::vector<int> melody { 60, 64, 67, 64, 69, 65, 62, 60 };
     feed(processor, melody, 2.0);                       // a little singing, so the stage glows and the meters move
 
+    // The first screen must actually contain the new shared SkellCore overlay;
+    // a snapshot of the regular editor is NOT evidence the tour works.
+    bool foundTour=false;
+    for(int i=0;i<editor->getNumChildComponents();++i)
+      if(auto* component=editor->getChildComponent(i))
+        if(component->getComponentID()=="skellcore-guided-tour" && component->isVisible())
+          foundTour=true;
+    if(!foundTour) {
+      std::fprintf(stderr,"Shared guided tour did not appear on first launch\\n");
+      return 2;
+    }
     savePng(*editor, folder, "01-first-run-tour");      // a fresh install shows the tour first
     editor->dismissTour();
     editor->showForScreenshot(false, 0);  savePng(*editor, folder, "02-easy-mode");
