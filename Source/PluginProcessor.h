@@ -16,9 +16,10 @@ class OmniChoirAudioProcessor final : public juce::AudioProcessor, private juce:
 public:
     OmniChoirAudioProcessor();
     ~OmniChoirAudioProcessor() override;
-    bool setFollowSkellKey(bool on); // message thread: explicit opt-in
+    bool setFollowSkellKey(bool on); // message-thread lifecycle; automatically joined in constructor
     bool followingSkellKey() const noexcept { return followWorldKey_.load(std::memory_order_acquire); }
     bool skellWorldOnline() const noexcept { return worldLink_.online(); }
+    float receivedSkellKeyA4() const noexcept { return receivedA4_.load(std::memory_order_acquire); }
     skellcore::world::MusicalKey skellWorldKey() const noexcept {
         return skellcore::world::unpackMusicalKey(linkedKey_.load(std::memory_order_acquire));
     }
@@ -86,6 +87,9 @@ private:
     skellcore::world::WorldLink worldLink_ {"skell.choir", "OmniChoir"};
     std::atomic<bool> followWorldKey_ {false};
     std::atomic<int> linkedKey_ {0};
+    // The tuning reference is available to future synthesis modes without
+    // modifying the current choir DSP or creating a new host parameter.
+    std::atomic<float> receivedA4_ {440.f};
     choir::StagedChoir staged;   // v0.6: 16 singer layers -> faithful stage (mic arrays, reflections, FDN) -> hall -> lead
     std::atomic<bool> scanRequested { false }, restoreRequested { false };
     std::atomic<int> visibleStatus { 0 }, savedRoot { 0 };
