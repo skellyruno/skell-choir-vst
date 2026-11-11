@@ -51,6 +51,40 @@ OmniChoirAudioProcessor::OmniChoirAudioProcessor()
     raw.consonants=get("consonants");raw.swell=get("swell");raw.keyRoot=get("keyRoot");raw.scale=get("scale");raw.pulseRate=get("pulseRate");raw.pulseDepth=get("pulseDepth");
     for(int i=0;i<4;++i) raw.sectionState[(size_t)i]=get("sectionState"+juce::String(i));
 }
+OmniChoirAudioProcessor::~OmniChoirAudioProcessor() { setFollowSkellKey(false); }
+
+bool OmniChoirAudioProcessor::setFollowSkellKey(bool on) {
+    if (!on) {
+        stopTimer();
+        followWorldKey_.store(false,std::memory_order_release);
+        linkedKey_.store(0,std::memory_order_release);
+        worldLink_.leave();
+        return true;
+    }
+    if (!worldLink_.requested() && !worldLink_.join()) return false;
+    followWorldKey_.store(true,std::memory_order_release);
+    startTimerHz(5);
+    timerCallback();
+    return true;
+}
+
+void OmniChoirAudioProcessor::timerCallback() {
+    if (!followingSkellKey() || !worldLink_.online()) {
+        linkedKey_.store(0,std::memory_order_release);
+        return;
+    }
+    skellcore::world::MusicalTuning tuning;
+    std::uint32_t tuningVersion=0;
+    if (worldLink_.latestMusicalTuning(tuning,tuningVersion)) {
+        linkedKey_.store(skellcore::world::MusicalKey{tuning.root,tuning.mode}.packed(),
+                         std::memory_order_release);
+        return;
+    }
+    skellcore::world::MusicalKey key;
+    std::uint64_t version=0;
+    linkedKey_.store(worldLink_.latestMusicalKey(key,version) ? key.packed() : 0,
+                     std::memory_order_release);
+}
 juce::AudioProcessorValueTreeState::ParameterLayout OmniChoirAudioProcessor::createLayout() {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     const juce::StringArray names { "Soprano", "Alto", "Tenor", "Bass" };
@@ -147,6 +181,13 @@ choir::FXParams OmniChoirAudioProcessor::readParams() const {
     p.choirBreath=read(raw.choirBreath);p.vibrato=read(raw.vibrato);p.classicStage=read(raw.classicStage)>.5f;
     p.choirLevelDb=read(raw.choirLevel);p.levelMatch=read(raw.levelMatch)>.5f;
     p.keyRoot=(int)read(raw.keyRoot);p.scale=(int)read(raw.scale);p.consonants=read(raw.consonants);
+    if (followWorldKey_.load(std::memory_order_relaxed)) {
+        const auto key=skellcore::world::unpackMusicalKey(linkedKey_.load(std::memory_order_acquire));
+        if (key.valid()) {
+            p.keyRoot=key.root;
+            p.scale=key.mode == 0 ? 1 : 2;
+        }
+    }
     p.swell=read(raw.swell);p.pulseRate=(int)read(raw.pulseRate);p.pulseDepth=read(raw.pulseDepth);
     choir::applySize(p,read(raw.choirSize));
     // solo and mute: a muted section is silent; if any section is soloed, only soloed sections are heard
