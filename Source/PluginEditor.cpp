@@ -495,6 +495,13 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
         scaleBox.setTooltip("The scale of your song. NO SCALE leaves the harmony at fixed intervals (a fifth, a third, a fourth below, an octave below). Nothing is detected: you choose.");
         addAndMakeVisible(keyBox);addAndMakeVisible(scaleBox);
     }
+    followKeyButton.setComponentID("action");
+    followKeyButton.setTooltip("Opt in to SkellKey key/scale sync through the local SkellWorld Hub. Does not overwrite saved settings.");
+    followKeyButton.onClick=[this] {
+        processor.setFollowSkellKey(!processor.followingSkellKey());
+        followKeyButton.setButtonText(processor.followingSkellKey() ? "KEY LINK ON" : "FOLLOW KEY");
+    };
+    addAndMakeVisible(followKeyButton);
     choirButton.setComponentID("power");
     choirButton.setClickingTogglesState(true);
     choirButton.setTooltip("Choir on or off. Your own voice is always heard.");
@@ -1022,6 +1029,9 @@ void OmniChoirAudioProcessorEditor::paintListBoxItem(int index,juce::Graphics& g
     }
 }
 void OmniChoirAudioProcessorEditor::timerCallback() {
+    const juce::String followText = !processor.followingSkellKey() ? "FOLLOW KEY" :
+              (processor.skellWorldOnline() ? "KEY LINK ON" : "WAITING HUB");
+    if (followKeyButton.getButtonText() != followText) followKeyButton.setButtonText(followText);
     juce::String msg="Drag the singers, your lead and the mic on the stage. Double-click one to put it back.";
     // ---- LISTEN: the take is captured, analysed and then sung
     auto& session=processor.listenSession();
@@ -1035,9 +1045,14 @@ void OmniChoirAudioProcessorEditor::timerCallback() {
     {   // changing the key, scale or harmony re-voices the take, unless you have edited notes by hand
         const auto read=[this](const char* id) {return (int)processor.parameters.getRawParameterValue(id)->load();};
         const int key=read("keyRoot"),scale=read("scale"),harmony=read("harmony");
-        if((key!=lastKey||scale!=lastScale||harmony!=lastHarmony) && lastKey>=0) session.revoice(key,scale,harmony);
-        lastKey=key;lastScale=scale;lastHarmony=harmony;
-        keyBox.setEnabled(scale>0);
+        const auto linked=processor.skellWorldKey();
+        const int effectiveKey=processor.followingSkellKey() && linked.valid() ? linked.root : key;
+        const int effectiveScale=processor.followingSkellKey() && linked.valid() ? (linked.mode == 0 ? 1 : 2) : scale;
+        if((effectiveKey!=lastKey||effectiveScale!=lastScale||harmony!=lastHarmony) && lastKey>=0)
+            session.revoice(effectiveKey,effectiveScale,harmony);
+        lastKey=effectiveKey;lastScale=effectiveScale;lastHarmony=harmony;
+        keyBox.setEnabled(!processor.followingSkellKey() && scale>0);
+        scaleBox.setEnabled(!processor.followingSkellKey());
     }
     switch(session.state()) {
         case choir::ListenSession::Listening:msg="LISTENING: play your take through the plugin from the start, then press STOP.   "+juce::String(session.capturedSeconds(),1)+" s";break;
@@ -1153,6 +1168,8 @@ void OmniChoirAudioProcessorEditor::resized() {
     scaleBox.setBounds(header.removeFromRight(124).withSizeKeepingCentre(124,30));
     header.removeFromRight(6);
     keyBox.setBounds(header.removeFromRight(78).withSizeKeepingCentre(78,30));
+    header.removeFromRight(8);
+    followKeyButton.setBounds(header.removeFromRight(112).withSizeKeepingCentre(112,30));
 
     const int footerTop=h-footerHeight-6;
     const int controlsTop=footerTop-6-controlsHeight;
