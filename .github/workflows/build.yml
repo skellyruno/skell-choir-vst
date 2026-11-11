@@ -1,5 +1,11 @@
 name: Build Windows VST3
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'CMakeLists.txt'
+      - 'Source/**'
+      - '.github/workflows/build.yml'
   workflow_dispatch:
   pull_request:
     paths:
