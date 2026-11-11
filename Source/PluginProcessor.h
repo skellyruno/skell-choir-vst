@@ -7,13 +7,21 @@
 #include "Scales.h"
 #include "StyleFile.h"
 #include "Offline/ListenSession.h"
+#include <SkellCore/WorldLink.h>
 #include <atomic>
 #include <cstdint>
 
 // Stereo/mono insert AUDIO EFFECT. Optional MIDI input (v0.7): hold keys and the choir sings that chord from your voice. No pre-rendered choir samples.
-class OmniChoirAudioProcessor final : public juce::AudioProcessor {
+class OmniChoirAudioProcessor final : public juce::AudioProcessor, private juce::Timer {
 public:
     OmniChoirAudioProcessor();
+    ~OmniChoirAudioProcessor() override;
+    bool setFollowSkellKey(bool on); // message thread: explicit opt-in
+    bool followingSkellKey() const noexcept { return followWorldKey_.load(std::memory_order_acquire); }
+    bool skellWorldOnline() const noexcept { return worldLink_.online(); }
+    skellcore::world::MusicalKey skellWorldKey() const noexcept {
+        return skellcore::world::unpackMusicalKey(linkedKey_.load(std::memory_order_acquire));
+    }
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
     bool isBusesLayoutSupported(const BusesLayout&) const override;
@@ -74,6 +82,10 @@ public:
     juce::AudioProcessorValueTreeState parameters;
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 private:
+    void timerCallback() override;
+    skellcore::world::WorldLink worldLink_ {"skell.choir", "OmniChoir"};
+    std::atomic<bool> followWorldKey_ {false};
+    std::atomic<int> linkedKey_ {0};
     choir::StagedChoir staged;   // v0.6: 16 singer layers -> faithful stage (mic arrays, reflections, FDN) -> hall -> lead
     std::atomic<bool> scanRequested { false }, restoreRequested { false };
     std::atomic<int> visibleStatus { 0 }, savedRoot { 0 };
