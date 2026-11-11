@@ -2,6 +2,24 @@
 
 **VST3 effect source project — not a compiled plugin.** This is an upgrade of the OmniChoir FX starter using your original JS stage, worklet, renderer, latest `omnichoir-demo.js`, the five photographic references, and the screenshot of the larger GUI. The original JS files are kept verbatim in `Reference/` for continued native porting. The browser `AudioWorklet` itself cannot execute as a native VST3 audio callback; the relevant stage/mic/group interaction patterns and acoustic concepts are translated into C++.
 
+## SkellKey hub-free automatic Key/Scale link (Windows)
+
+OmniChoir now listens automatically for the user's explicit **SEND TO TUNE**
+action in SkellKey. If SkellKey publishes a confirmed Key/Scale/A4 packet,
+OmniChoir follows the Major/Minor Key/Scale using its existing host parameters;
+there is no more Follow Key button and no separate Hub/Python installer.
+When nothing is being sent, its original manual Key and Scale controls remain
+available. The last received tuning remains in the project after the sender
+stops, while audio stays on its original synthesis path. The received A4 is
+tracked for future choir tuning modes but does **not** currently change the
+choir's underlying A440 synthesis; no unbenchmarked DSP change is introduced.
+
+SkellCore uses Windows same-session shared memory; other platforms retain
+the optional older localhost Hub transport. Publishing is opt-in at the
+SkellKey sender, is not performed in a realtime audio callback, and expires
+after 5 seconds when the sender crashes.
+
+
 ## v0.8 — Listen mode, key and scale, consonants, your own styles (this release)
 
 **Listen**: play your vocal through once; the plugin analyses it into notes (piano roll, editable) and the choir then sings that score in your key, in time with the host.
