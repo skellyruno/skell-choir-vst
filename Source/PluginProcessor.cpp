@@ -50,6 +50,9 @@ OmniChoirAudioProcessor::OmniChoirAudioProcessor()
     raw.choirLevel=get("choirLevel");raw.levelMatch=get("levelMatch");raw.choirSize=get("choirSize");
     raw.consonants=get("consonants");raw.swell=get("swell");raw.keyRoot=get("keyRoot");raw.scale=get("scale");raw.pulseRate=get("pulseRate");raw.pulseDepth=get("pulseDepth");
     for(int i=0;i<4;++i) raw.sectionState[(size_t)i]=get("sectionState"+juce::String(i));
+    // All Mini/Choir receivers connect automatically. Only the user-facing
+    // SEND TO TUNE button in SkellKey starts publication.
+    setFollowSkellKey(true);
 }
 OmniChoirAudioProcessor::~OmniChoirAudioProcessor() { setFollowSkellKey(false); }
 
@@ -76,8 +79,24 @@ void OmniChoirAudioProcessor::timerCallback() {
     skellcore::world::MusicalTuning tuning;
     std::uint32_t tuningVersion=0;
     if (worldLink_.latestMusicalTuning(tuning,tuningVersion)) {
-        linkedKey_.store(skellcore::world::MusicalKey{tuning.root,tuning.mode}.packed(),
-                         std::memory_order_release);
+        const int packed=skellcore::world::MusicalKey{tuning.root,tuning.mode}.packed();
+        const int previous=linkedKey_.exchange(packed,std::memory_order_acq_rel);
+        // Update the existing DAW Key/Scale parameters only when the confirmed
+        // sender changes tuning. Do not add IDs or touch the audio callback.
+        if (packed != previous) {
+            const auto sync=[this](const char* id,float value) {
+                auto* p=parameters.getParameter(id);
+                const auto* current=parameters.getRawParameterValue(id);
+                if (p && current && std::abs(current->load()-value)>0.01f) {
+                    p->beginChangeGesture();
+                    p->setValueNotifyingHost(p->convertTo0to1(value));
+                    p->endChangeGesture();
+                }
+            };
+            sync("keyRoot",float(tuning.root));
+            sync("scale",float(tuning.mode==0 ? 1 : 2));
+        }
+        receivedA4_.store(float(tuning.a4Hz()),std::memory_order_release);
         return;
     }
     skellcore::world::MusicalKey key;
