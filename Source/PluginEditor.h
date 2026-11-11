@@ -114,7 +114,7 @@ private:
     TakeWorker take;
 
     // header
-    juce::TextButton choirButton {"CHOIR ON"};
+    juce::TextButton choirButton {"CHOIR ON"}, followKeyButton {"FOLLOW KEY"};
     juce::ComboBox keyBox, scaleBox;   // v0.8: you choose the key and scale; nothing is detected
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> keyAttachment, scaleAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> choirAttachment;
