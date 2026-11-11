@@ -15,6 +15,13 @@ else()
     FetchContent_MakeAvailable(JUCE)
 endif()
 
+# Pin SkellCore shared protocol. Never use sockets from audio callbacks.
+FetchContent_Declare(SkellCoreShared
+    GIT_REPOSITORY https://github.com/skellyruno/skell-vst-template.git
+    GIT_TAG 568a17fd1956065f06d20813f5e57c3621c1cac9
+    SOURCE_SUBDIR SkellCore)
+FetchContent_MakeAvailable(SkellCoreShared)
+
 juce_add_plugin(OmniChoirFX
     COMPANY_NAME "Skell Audio"
     BUNDLE_ID "audio.skell.omnichoirfx"
@@ -70,6 +77,7 @@ target_compile_definitions(OmniChoirFX PRIVATE
     JUCE_USE_CURL=0)
 target_compile_definitions(OmniChoirFX PUBLIC JUCE_VST3_CAN_REPLACE_VST2=0)
 target_link_libraries(OmniChoirFX PRIVATE
+    SkellCore::DSP
     juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_gui_extra
@@ -90,6 +98,7 @@ if(OMNICHOIR_BUILD_SCREENSHOTS)
     target_compile_features(OmniChoirScreenshots PRIVATE cxx_std_17)
     target_compile_definitions(OmniChoirScreenshots PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
     target_link_libraries(OmniChoirScreenshots PRIVATE
+        SkellCore::DSP
         OmniChoirFXArt
         juce::juce_audio_utils
         juce::juce_audio_processors
