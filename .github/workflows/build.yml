@@ -1,4 +1,4 @@
-name: Build Windows VST3
+name: Build SkellyChoir Windows VST3
 on:
   push:
     branches: [main]
@@ -26,9 +26,9 @@ jobs:
         run: |
           $plugin = Get-ChildItem -Path build -Directory -Recurse -Filter '*.vst3' | Select-Object -First 1
           if (-not $plugin) { throw 'VST3 bundle missing' }
-          Compress-Archive -Path $plugin.FullName -DestinationPath SkellPlugin-Windows-VST3.zip
+          Compress-Archive -Path $plugin.FullName -DestinationPath SkellyChoir-${{ runner.os }}-VST3.zip
       - uses: actions/upload-artifact@v6
         with:
-          name: SkellPlugin-Windows-VST3
-          path: SkellPlugin-Windows-VST3.zip
+          name: SkellyChoir-${{ runner.os }}-VST3
+          path: SkellyChoir-${{ runner.os }}-VST3.zip
           if-no-files-found: error
