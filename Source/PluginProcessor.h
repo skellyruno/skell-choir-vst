@@ -1,4 +1,6 @@
 #pragma once
+#include "Branding.h"
+#include "Scenes.h"
 #include <JuceHeader.h>
 #include "StagedChoir.h"
 #include "StagePresets.h"
@@ -7,29 +9,37 @@
 #include "Scales.h"
 #include "StyleFile.h"
 #include "Offline/ListenSession.h"
+#ifdef SKELLYCHOIR_WITH_SKELLCORE
 #include <SkellCore/WorldLink.h>
+#endif
 #include <atomic>
 #include <cstdint>
 
 // Stereo/mono insert AUDIO EFFECT. Optional MIDI input (v0.7): hold keys and the choir sings that chord from your voice. No pre-rendered choir samples.
-class OmniChoirAudioProcessor final : public juce::AudioProcessor, private juce::Timer {
+class OmniChoirAudioProcessor final : public juce::AudioProcessor
+#ifdef SKELLYCHOIR_WITH_SKELLCORE
+    , private juce::Timer
+#endif
+{
 public:
     OmniChoirAudioProcessor();
     ~OmniChoirAudioProcessor() override;
-    bool setFollowSkellKey(bool on); // message-thread lifecycle; automatically joined in constructor
-    bool followingSkellKey() const noexcept { return followWorldKey_.load(std::memory_order_acquire); }
-    bool skellWorldOnline() const noexcept { return worldLink_.online(); }
-    float receivedSkellKeyA4() const noexcept { return receivedA4_.load(std::memory_order_acquire); }
+#ifdef SKELLYCHOIR_WITH_SKELLCORE
+    bool setFollowSkellKey(bool on);
+    bool followingSkellKey() const noexcept {return followWorldKey_.load(std::memory_order_acquire);}
+    bool skellWorldOnline() const noexcept {return worldLink_.online();}
+    float receivedSkellKeyA4() const noexcept {return receivedA4_.load(std::memory_order_acquire);}
     skellcore::world::MusicalKey skellWorldKey() const noexcept {
         return skellcore::world::unpackMusicalKey(linkedKey_.load(std::memory_order_acquire));
     }
+#endif
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
     bool isBusesLayoutSupported(const BusesLayout&) const override;
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
-    const juce::String getName() const override { return "OmniChoir FX"; }
+    const juce::String getName() const override { return branding::kProductName; }
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -56,6 +66,7 @@ public:
     void clearImpulseResponse();
     bool hasImpulseResponse() const { return staged.hasImpulseResponse(); }
     juce::String impulseResponseName() const { return irName; }
+    int currentScene() const {return scene.load();}   // the stage picture: the last stage preset applied (Scenes.h)
     void applyStagePreset(int index);               // placement + room only; never harmony, mix, lead level or output
     // v0.7 (message thread)
     static constexpr int kNumBuiltInRooms = 3;
@@ -65,6 +76,7 @@ public:
     void surpriseMe();                               // a random but musical style
     int chordNote(int section) const { return chordView[(size_t) section].load(std::memory_order_relaxed); }   // the stage shows the chord being held (-1 = none)
     // v0.8: your own styles (plain-text .omnistyle files in the user's application-data folder)
+    static juce::File settingsFolder();   // per user: styles, window size, tour flag, theme. Copies the pre-SkellyChoir folder in once.
     static juce::File userStyleFolder();
     juce::Array<juce::File> userStyleFiles() const;
     bool saveStyleFile(const juce::File& file);   // the current sound: never your lead level, output, key, mode or solo/mute
@@ -83,16 +95,17 @@ public:
     juce::AudioProcessorValueTreeState parameters;
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 private:
+#ifdef SKELLYCHOIR_WITH_SKELLCORE
     void timerCallback() override;
-    skellcore::world::WorldLink worldLink_ {"skell.choir", "OmniChoir"};
+    skellcore::world::WorldLink worldLink_ {"skell.choir", "SkellyChoir"};
     std::atomic<bool> followWorldKey_ {false};
     std::atomic<int> linkedKey_ {0};
-    // The tuning reference is available to future synthesis modes without
-    // modifying the current choir DSP or creating a new host parameter.
     std::atomic<float> receivedA4_ {440.f};
+#endif
     choir::StagedChoir staged;   // v0.6: 16 singer layers -> faithful stage (mic arrays, reflections, FDN) -> hall -> lead
     std::atomic<bool> scanRequested { false }, restoreRequested { false };
     std::atomic<int> visibleStatus { 0 }, savedRoot { 0 };
+    std::atomic<int> scene { 0 };   // index into scenes::kScenes; only the stage picture follows it, never the sound
     std::atomic<float> visibleProgress { 0 }, visiblePitch { -1 }, visibleRms { 0 };
     struct RawParameters {
         std::array<std::atomic<float>*,4> gains {}, xs {}, ys {};
@@ -102,7 +115,7 @@ private:
         std::atomic<float>* wet=nullptr,*mix=nullptr,*master=nullptr;
         std::atomic<float>* leadX=nullptr,*leadY=nullptr,*leadGain=nullptr,*humanize=nullptr,*formant=nullptr,*hall=nullptr,*hallSeconds=nullptr;
         std::atomic<float>* voiceBlend=nullptr,*choirVowel=nullptr,*vowelFollow=nullptr,*choirBreath=nullptr,*vibrato=nullptr,*classicStage=nullptr,*choirLevel=nullptr,*levelMatch=nullptr,*choirSize=nullptr,*consonants=nullptr,*swell=nullptr,*keyRoot=nullptr,*scale=nullptr,*pulseRate=nullptr,*pulseDepth=nullptr;
-        std::array<std::atomic<float>*,4> sectionState {};   // 0 normal, 1 solo, 2 mute
+        std::array<std::atomic<float>*,5> sectionState {};   // 0 normal, 1 solo, 2 mute; 0..3 the sections, 4 the lead
     } raw;
     choir::FXParams readParams() const;
     juce::String irPath, irName;   // message thread only. irPath is a file path, or "builtin:N" for a shipped room

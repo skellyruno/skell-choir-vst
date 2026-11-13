@@ -49,13 +49,18 @@ OmniChoirAudioProcessor::OmniChoirAudioProcessor()
     raw.choirBreath=get("choirBreath");raw.vibrato=get("vibrato");raw.classicStage=get("classicStage");
     raw.choirLevel=get("choirLevel");raw.levelMatch=get("levelMatch");raw.choirSize=get("choirSize");
     raw.consonants=get("consonants");raw.swell=get("swell");raw.keyRoot=get("keyRoot");raw.scale=get("scale");raw.pulseRate=get("pulseRate");raw.pulseDepth=get("pulseDepth");
-    for(int i=0;i<4;++i) raw.sectionState[(size_t)i]=get("sectionState"+juce::String(i));
-    // All Mini/Choir receivers connect automatically. Only the user-facing
-    // SEND TO TUNE button in SkellKey starts publication.
+    for(int i=0;i<5;++i) raw.sectionState[(size_t)i]=get("sectionState"+juce::String(i));
+#ifdef SKELLYCHOIR_WITH_SKELLCORE
+    // SkellKey's Send to Tune publishes Key/Scale/A4 without SkellyHub.
     setFollowSkellKey(true);
+#endif
 }
-OmniChoirAudioProcessor::~OmniChoirAudioProcessor() { setFollowSkellKey(false); }
-
+OmniChoirAudioProcessor::~OmniChoirAudioProcessor() {
+#ifdef SKELLYCHOIR_WITH_SKELLCORE
+    setFollowSkellKey(false);
+#endif
+}
+#ifdef SKELLYCHOIR_WITH_SKELLCORE
 bool OmniChoirAudioProcessor::setFollowSkellKey(bool on) {
     if (!on) {
         stopTimer();
@@ -70,7 +75,6 @@ bool OmniChoirAudioProcessor::setFollowSkellKey(bool on) {
     timerCallback();
     return true;
 }
-
 void OmniChoirAudioProcessor::timerCallback() {
     if (!followingSkellKey() || !worldLink_.online()) {
         linkedKey_.store(0,std::memory_order_release);
@@ -81,29 +85,28 @@ void OmniChoirAudioProcessor::timerCallback() {
     if (worldLink_.latestMusicalTuning(tuning,tuningVersion)) {
         const int packed=skellcore::world::MusicalKey{tuning.root,tuning.mode}.packed();
         const int previous=linkedKey_.exchange(packed,std::memory_order_acq_rel);
-        // Update the existing DAW Key/Scale parameters only when the confirmed
-        // sender changes tuning. Do not add IDs or touch the audio callback.
         if (packed != previous) {
             const auto sync=[this](const char* id,float value) {
-                auto* p=parameters.getParameter(id);
+                auto* param=parameters.getParameter(id);
                 const auto* current=parameters.getRawParameterValue(id);
-                if (p && current && std::abs(current->load()-value)>0.01f) {
-                    p->beginChangeGesture();
-                    p->setValueNotifyingHost(p->convertTo0to1(value));
-                    p->endChangeGesture();
+                if (param && current && std::abs(current->load()-value)>0.01f) {
+                    param->beginChangeGesture();
+                    param->setValueNotifyingHost(param->convertTo0to1(value));
+                    param->endChangeGesture();
                 }
             };
             sync("keyRoot",float(tuning.root));
-            sync("scale",float(tuning.mode==0 ? 1 : 2));
+            sync("scale",float(tuning.mode==0?1:2));
         }
         receivedA4_.store(float(tuning.a4Hz()),std::memory_order_release);
         return;
     }
     skellcore::world::MusicalKey key;
     std::uint64_t version=0;
-    linkedKey_.store(worldLink_.latestMusicalKey(key,version) ? key.packed() : 0,
+    linkedKey_.store(worldLink_.latestMusicalKey(key,version)?key.packed():0,
                      std::memory_order_release);
 }
+#endif
 juce::AudioProcessorValueTreeState::ParameterLayout OmniChoirAudioProcessor::createLayout() {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     const juce::StringArray names { "Soprano", "Alto", "Tenor", "Bass" };
@@ -127,8 +130,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout OmniChoirAudioProcessor::cre
     addFloat(layout,"ensemble","Ensemble Detune",0.f,1.f,.001f,.58f);
     addFloat(layout,"humanize","Human Variation",0.f,1.f,.001f,.75f);
     addFloat(layout,"formant","Singer Character",0.f,1.f,.001f,.5f);
-    addFloat(layout,"leadX","Lead X",-9.f,9.f,.01f,0.f,"m");
-    addFloat(layout,"leadY","Lead Y",-5.f,12.f,.01f,.4f,"m");
+    addFloat(layout,"leadX","Lead X",-24.f,24.f,.01f,0.f,"m");   // v0.9: wide enough that the lead reaches the whole stage from any mic position (see StageGeometry.h)
+    addFloat(layout,"leadY","Lead Y",-16.f,22.f,.01f,.4f,"m");
     addFloat(layout,"leadGain","Lead Level",0.f,1.5f,.001f,1.f);
     addFloat(layout,"sensitivity","Input Sensitivity",0.f,1.f,.001f,.65f);
     addFloat(layout,"roomSize","Room Size",0.f,1.f,.001f,.52f);
@@ -149,9 +152,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout OmniChoirAudioProcessor::cre
     addFloat(layout,"choirLevel","Choir Level",-12.f,12.f,.1f,0.f,"dB");
     layout.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"levelMatch",1},"Auto Level",true));   // v0.7
     addFloat(layout,"choirSize","Choir Size",0.f,1.f,.001f,.5f);                                                   // v0.7 macro, 0.5 = neutral
-    for(int i=0;i<4;++i)                                                                                           // v0.7 solo / mute
+    for(int i=0;i<5;++i)                                                                                           // v0.7 solo / mute; v1: 4 is the lead
         layout.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"sectionState"+juce::String(i),1},
-            names[i]+" Solo/Mute",juce::StringArray{"Normal","Solo","Mute"},0));
+            (i<4?names[i]:juce::String("Lead"))+" Solo/Mute",juce::StringArray{"Normal","Solo","Mute"},0));
     // v0.8: the key and scale are yours to choose (nothing is detected); Chromatic keeps the fixed intervals of earlier versions
     layout.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"keyRoot",1},"Key",
         juce::StringArray{"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"},0));
@@ -200,21 +203,21 @@ choir::FXParams OmniChoirAudioProcessor::readParams() const {
     p.choirBreath=read(raw.choirBreath);p.vibrato=read(raw.vibrato);p.classicStage=read(raw.classicStage)>.5f;
     p.choirLevelDb=read(raw.choirLevel);p.levelMatch=read(raw.levelMatch)>.5f;
     p.keyRoot=(int)read(raw.keyRoot);p.scale=(int)read(raw.scale);p.consonants=read(raw.consonants);
+#ifdef SKELLYCHOIR_WITH_SKELLCORE
     if (followWorldKey_.load(std::memory_order_relaxed)) {
         const auto key=skellcore::world::unpackMusicalKey(linkedKey_.load(std::memory_order_acquire));
-        if (key.valid()) {
-            p.keyRoot=key.root;
-            p.scale=key.mode == 0 ? 1 : 2;
-        }
+        if (key.valid()) {p.keyRoot=key.root;p.scale=key.mode==0?1:2;}
     }
+#endif
     p.swell=read(raw.swell);p.pulseRate=(int)read(raw.pulseRate);p.pulseDepth=read(raw.pulseDepth);
     choir::applySize(p,read(raw.choirSize));
     // solo and mute: a muted section is silent; if any section is soloed, only soloed sections are heard
+    // the lead (your own voice on the stage) takes part too: solo the lead and only she is heard; mute her and she is silent
     bool anySolo=false;
-    for(int i=0;i<4;++i) if((int)read(raw.sectionState[(size_t)i])==1) anySolo=true;
-    for(int i=0;i<4;++i) {
+    for(int i=0;i<5;++i) if((int)read(raw.sectionState[(size_t)i])==1) anySolo=true;
+    for(int i=0;i<5;++i) {
         const int state=(int)read(raw.sectionState[(size_t)i]);
-        if(anySolo?state!=1:state==2) p.gain[(size_t)i]=0.f;
+        if(anySolo?state!=1:state==2) {if(i<4) p.gain[(size_t)i]=0.f; else p.leadGain=0.f;}
     }
     return p;
 }
@@ -303,6 +306,7 @@ void OmniChoirAudioProcessor::getStateInformation(juce::MemoryBlock& dest) {
         xml->setAttribute("irPath",irPath);
         xml->setAttribute("omniStateVersion",kStateVersion);
         xml->setAttribute("omniProUi",proUi());
+        xml->setAttribute("omniScene",scene.load());
         copyXmlToBinary(*xml,dest);
     }
 }
@@ -317,6 +321,7 @@ void OmniChoirAudioProcessor::setStateInformation(const void* data,int size) {
                 if(auto* match=parameters.getParameter("levelMatch")) match->setValueNotifyingHost(match->convertTo0to1(0.f));
             if(version<4)   // saved before CONSONANTS existed: it loads with CONSONANTS off, exactly as it sounded
                 if(auto* cons=parameters.getParameter("consonants")) cons->setValueNotifyingHost(cons->convertTo0to1(0.f));
+            scene.store(scenes::clampScene(xml->getIntAttribute("omniScene",0)));   // older sessions: the original photo
             setProUi(xml->getBoolAttribute("omniProUi",true));   // a session from before the Easy mode keeps the full MAIN page
             savedRoot.store(juce::jlimit(0,11,xml->getIntAttribute("scanPitchClass",0)));
             visibleStatus.store(xml->getBoolAttribute("scanWasReady",false)?2:0);
@@ -378,6 +383,7 @@ void OmniChoirAudioProcessor::setParameterValue(const juce::String& id,float val
 }
 void OmniChoirAudioProcessor::applyStagePreset(int index) {
     if(index<0 || index>=choir::kNumStagePresets) return;
+    scene.store(scenes::clampScene(index));   // the picture behind the singers follows the room
     const auto& s=choir::kStagePresets[index];
     const auto set=[this](const juce::String& id,float value) {setParameterValue(id,value);};
     for(int i=0;i<4;++i) {
@@ -413,8 +419,18 @@ void OmniChoirAudioProcessor::setCurrentProgram(int index) {
     currentProgram=index;
     applyStyle(index);
 }
+juce::File OmniChoirAudioProcessor::settingsFolder() {
+    const auto base=juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+    const auto folder=base.getChildFile(branding::kSettingsFolder);
+    if(!folder.isDirectory()) {
+        // first run after the rename: bring the user's styles, window size and "tour seen" flag across. The old folder is left alone for older versions.
+        const auto legacy=base.getChildFile(branding::kLegacySettingsFolder);
+        if(legacy.isDirectory()) legacy.copyDirectoryTo(folder);
+    }
+    return folder;
+}
 juce::File OmniChoirAudioProcessor::userStyleFolder() {
-    const auto folder=juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("OmniChoir FX").getChildFile("Styles");
+    const auto folder=settingsFolder().getChildFile("Styles");
     folder.createDirectory();
     return folder;
 }
@@ -425,13 +441,14 @@ bool OmniChoirAudioProcessor::saveStyleFile(const juce::File& file) {
     std::vector<std::pair<std::string,float>> values;
     for(int i=0;i<choir::kNumUserStyleIds;++i)
         if(auto* value=parameters.getRawParameterValue(choir::kUserStyleIds[i])) values.emplace_back(choir::kUserStyleIds[i],value->load());
-    return file.replaceWithText(juce::String(choir::writeStyleFile(file.getFileNameWithoutExtension().toStdString(),values)));
+    return file.replaceWithText(juce::String(choir::writeStyleFile(file.getFileNameWithoutExtension().toStdString(),values,scene.load())));
 }
 bool OmniChoirAudioProcessor::loadStyleFile(const juce::File& file) {
     if(!file.existsAsFile() || file.getSize()>64*1024) return false;   // a style file is a couple of kilobytes: refuse anything silly
     choir::StyleFileData data;
     if(!choir::parseStyleFile(file.loadFileAsString().toStdString(),data) || data.values.empty()) return false;
     for(const auto& value:data.values) setParameterValue(juce::String(value.first),value.second);
+    if(data.scene>=0) scene.store(scenes::clampScene(data.scene));
     return true;
 }
 void OmniChoirAudioProcessor::startListening() {
