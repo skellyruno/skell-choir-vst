@@ -1,2 +1,4 @@
 #pragma once
-namespace BinaryData { extern const char cathedral_stage_jpg[]; extern const int cathedral_stage_jpgSize; }
+namespace BinaryData { extern const char cathedral_stage_jpg[]; extern const int cathedral_stage_jpgSize; extern const char scene_concert_hall_jpg[]; extern const int scene_concert_hall_jpgSize; extern const char scene_studio_booth_jpg[]; extern const int scene_studio_booth_jpgSize; extern const char scene_chapel_jpg[]; extern const int scene_chapel_jpgSize; extern const char scene_gospel_stage_jpg[]; extern const int scene_gospel_stage_jpgSize; extern const char scene_stadium_anthem_jpg[]; extern const int scene_stadium_anthem_jpgSize; extern const char scene_headphone_choir_jpg[]; extern const int scene_headphone_choir_jpgSize; extern const char scene_graveyard_jpg[]; extern const int scene_graveyard_jpgSize; extern const char scene_crypt_jpg[]; extern const int scene_crypt_jpgSize;
+    extern const char room_cathedral_wav[]; extern const int room_cathedral_wavSize; extern const char room_chapel_wav[]; extern const int room_chapel_wavSize;
+    extern const char room_small_hall_wav[]; extern const int room_small_hall_wavSize; }

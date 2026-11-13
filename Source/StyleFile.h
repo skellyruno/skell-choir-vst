@@ -2,6 +2,7 @@
 // v0.8: your own styles. A style file (".omnistyle") is plain text: the sound you made (where the singers stand, the room, how they sing),
 // never your lead level, OUTPUT, AUTO LEVEL, CHOIR LEVEL, PROCESS, solo/mute, key or scale. Only the parameters on the allow-list below are
 // ever read from a file, so a file you download cannot touch anything else. JUCE-free; tested in tests/style_file_tests.cpp.
+#include "Scenes.h"
 #include <cmath>
 #include <cstdlib>
 #include <string>
@@ -30,14 +31,16 @@ struct StyleFileData
 {
     std::string name;
     std::vector<std::pair<std::string,float>> values;
+    int scene = -1;   // the stage picture (Scenes.h), or -1 for "leave it as it is"
 };
 
 // "OmniChoirStyle 1", then "name=...", then one "id=value" per line
-inline std::string writeStyleFile(const std::string& name, const std::vector<std::pair<std::string,float>>& values)
+inline std::string writeStyleFile(const std::string& name, const std::vector<std::pair<std::string,float>>& values, int scene = -1)
 {
     std::string out = "OmniChoirStyle 1\nname=";
     for (char c : name) if (c != '\n' && c != '\r') out += c;
     out += "\n";
+    if (scene >= 0 && scene < scenes::kNumScenes) out += "scene=" + std::to_string(scene) + "\n";   
     for (const auto& v : values)
     {
         if (!isUserStyleId(v.first) || !std::isfinite(v.second)) continue;
@@ -65,6 +68,12 @@ inline bool parseStyleFile(const std::string& text, StyleFileData& out)
         if (key == "name")
         {
             for (char c : value) if ((unsigned char) c >= 32 && (unsigned char) c != 127 && out.name.size() < 60) out.name.push_back(c);
+            continue;
+        }
+        if (key == "scene")
+        {
+            char* end = nullptr; const long n = std::strtol(value.c_str(), &end, 10);
+            if (out.scene < 0 && end != value.c_str() && *end == 0 && n >= 0 && n < scenes::kNumScenes) out.scene = (int) n;   // junk or out of range is ignored; the first one wins
             continue;
         }
         if (!isUserStyleId(key)) continue;

@@ -34,12 +34,25 @@ static Track trackPitch(const Audio& a)
     return r;
 }
 
+// A glitch excursion: the track leaps more than 5 semitones and is back near where it was within 100 ms. A real note change never comes back.
+static int glitchExcursions(const std::vector<float>& midi, size_t from)
+{
+    int n = 0;
+    for (size_t i = std::max<size_t>(from, 1); i + 12 < midi.size(); ++i)
+    {
+        if (midi[i] < 0 || midi[i - 1] < 0 || std::fabs(midi[i] - midi[i - 1]) <= 5.f) continue;
+        for (size_t j = i + 1; j < i + 11; ++j) if (midi[j] > 0 && std::fabs(midi[j] - midi[i - 1]) < 2.f) { ++n; break; }
+    }
+    return n;
+}
+
 int main(int argc, char** argv)
 {
     Audio raw, tuned;
     const std::string dir = argc > 1 ? argv[1] : "tests/data";
     CHECK(readWav16(dir + "/vocal_raw_9s.wav", raw), "cannot read %s/vocal_raw_9s.wav", dir.c_str());
     CHECK(readWav16(dir + "/vocal_autotuned_9s.wav", tuned), "cannot read %s/vocal_autotuned_9s.wav", dir.c_str());
+    Audio hard; CHECK(readWav16(dir + "/vocal_raw_hard_9s.wav", hard), "cannot read %s/vocal_raw_hard_9s.wav", dir.c_str());
     CHECK(raw.sr == 44100 && tuned.sr == 44100 && raw.x.size() == tuned.x.size(), "fixtures changed shape");
 
     // 1. the pitch tracker on a real voice ----------------------------------------------------------------------
@@ -54,6 +67,14 @@ int main(int argc, char** argv)
         // 520 Hz: 2% of this excerpt, 7% of the full 30 s take. It does not affect the default Live sound. This guard stops it getting
         // worse; raise the limit when the tracker is improved.
         CHECK(t->plausibleShare > .93, "only %.0f%% of tracked notes are in a plausible range for this voice", 100 * t->plausibleShare);
+    }
+    {   // the hard excerpt: loud, high, full of consonants. Real high notes are allowed here, glitches are not
+        const Track th = trackPitch(hard);
+        const int excursions = glitchExcursions(th.midi, (size_t) hard.sr / 100), excursionsRaw = glitchExcursions(tr.midi, (size_t) raw.sr / 100);
+        std::printf("[1] hard excerpt: locked on %.0f%% of sung frames, %.0f%% of locked frames in MIDI 40..72, %d glitch excursions (easy excerpt: %d)\n",
+                    100 * th.lockedShare, 100 * th.plausibleShare, excursions, excursionsRaw);
+        CHECK(th.lockedShare > .95, "the tracker lost the voice on %.0f%% of the hard excerpt", 100 * (1 - th.lockedShare));
+        CHECK(excursions <= 4 && excursionsRaw <= 2, "the tracker makes %d / %d glitch excursions (limits 4 / 2)", excursions, excursionsRaw);
     }
     {   // the two takes are the same performance: where both are locked they must agree to well under a semitone
         std::vector<float> d; for (size_t i = (size_t) tr.midi.size() / 10; i < tr.midi.size(); ++i) if (tr.midi[i] > 0 && tt.midi[i] > 0) d.push_back(std::fabs(tr.midi[i] - tt.midi[i]));
@@ -74,10 +95,31 @@ int main(int argc, char** argv)
         CHECK(vsLead[k] > 0.0 && vsLead[k] < 9.0, "choir against lead %+.1f dB (want 0..+9)", vsLead[k]);
         CHECK(vsInput[k] > -9.0, "output is %.1f dB below the input (limit -9 dB)", vsInput[k]);
         CHECK(peak(o) <= 1.0, "peak %.3f over full scale", peak(o));
+        {   // AUTO LEVEL raises the output to the input's loudness: on a vocal recorded this hot only a few peaks may reach the soft ceiling
+            const auto m = voicedMask(a->x, a->sr); size_t n = 0, hot = 0;
+            for (size_t i = 0; i < o.l.size(); ++i) if (m[i]) { ++n; if (std::max(std::fabs(o.l[i]), std::fabs(o.r[i])) >= .95f) ++hot; }
+            CHECK(100.0 * (double) hot / (double) n < .1, "%.3f%% of the sung samples reach the output ceiling (limit 0.1%%)", 100.0 * (double) hot / (double) n);
+        }
         for (size_t i = 0; i < o.l.size(); ++i) CHECK(std::isfinite(o.l[i]) && std::isfinite(o.r[i]), "non-finite output sample %zu", i);
         ++k;
     }
     CHECK(std::fabs(vsLead[0] - vsLead[1]) < 1.0 && std::fabs(vsInput[0] - vsInput[1]) < 1.0, "the choir treats the raw and the tuned take differently (%.2f / %.2f dB)", vsLead[0] - vsLead[1], vsInput[0] - vsInput[1]);
+
+    // 2b. AUTO LEVEL: the loudness stays near the voice's own wherever CHOIR MIX sits, on real voices
+    for (const Audio* a : { &raw, &tuned, &hard })
+    {
+        const auto m = voicedMask(a->x, a->sr); const double in = dB(rms(a->x, m));
+        double lo = 1e9, hi = -1e9, offLo = 1e9, peakMax = 0;
+        for (float mix : { 0.f, .25f, .5f, .78f, 1.f })
+        {
+            auto p = p0; p.mix = mix; const auto o = render(a->x, a->sr, p);
+            const double v = dB(rms(o, m)) - in; lo = std::min(lo, v); hi = std::max(hi, v); peakMax = std::max(peakMax, peak(o));
+            auto q = p; q.levelMatch = false; offLo = std::min(offLo, dB(rms(render(a->x, a->sr, q), m)) - in);
+        }
+        std::printf("[2b] %s: output against input across MIX 0..100%%: %+.1f..%+.1f dB with AUTO LEVEL (%+.1f dB without); peak %.3f\n", a == &raw ? "raw  " : a == &tuned ? "tuned" : "hard ", lo, hi, offLo, peakMax);
+        CHECK(lo > -2.5 && hi < 2.5, "AUTO LEVEL leaves the real voice %+.1f..%+.1f dB from its input (limit +-2.5 dB)", lo, hi);
+        CHECK(peakMax <= 1.0, "peak %.3f over full scale", peakMax);
+    }
 
     // 3. every section is audible on a real voice ---------------------------------------------------------------
     {

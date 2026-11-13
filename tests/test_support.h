@@ -28,9 +28,39 @@ inline choir::FXParams pluginDefaults()
     p.roomSize = .52f; p.roomSeconds = 2.4f; p.absorption = .4f; p.diffusion = .7f; p.wet = .37f;
     p.width = .6f; p.micMode = 1;
     p.leadX = 0.f; p.leadY = .4f; p.leadGain = 1.f;
-    p.mix = .78f; p.master = 1.2f; p.choirLevelDb = 0.f;
+    p.mix = .78f; p.master = 1.f; p.choirLevelDb = 0.f; p.levelMatch = true;
+    p.consonants = .5f; p.swell = 0.f; p.pulseRate = 0; p.pulseDepth = .5f; p.keyRoot = 0; p.scale = 0;
     return p;
 }
+
+// ---- reading the plugin's parameter layout out of Source/PluginProcessor.cpp, so tests never drift from what the plugin declares
+inline std::vector<std::string> splitArgs(const std::string& s)
+{
+    std::vector<std::string> out; std::string cur;
+    for (char c : s) { if (c == ',') { out.push_back(cur); cur.clear(); } else cur += c; }
+    out.push_back(cur); return out;
+}
+// addFloat(layout,"id",name,min,max,step,default[,unit])  ->  [0]=layout [1]="id" [2]=name [3]=min [4]=max [5]=step [6]=default
+inline bool layoutArgs(const std::string& src, const std::string& idToken, std::vector<std::string>& args)
+{
+    const std::string key = "addFloat(layout," + idToken + ",";
+    const auto at = src.find(key); if (at == std::string::npos) return false;
+    const auto end = src.find(");", at); if (end == std::string::npos) return false;
+    args = splitArgs(src.substr(at + 9, end - at - 9));
+    return args.size() >= 7;
+}
+inline double num(const std::string& t) { return std::atof(t.c_str()); }
+inline std::string readFile(const std::string& path) { std::ifstream f(path); std::stringstream ss; ss << f.rdbuf(); return ss.str(); }
+// the default of AudioParameterBool{ParameterID{"id",1},"name",true}
+inline bool boolDefault(const std::string& src, const std::string& id, bool& value)
+{
+    const auto at = src.find("ParameterID{\"" + id + "\",1}"); if (at == std::string::npos) return false;
+    const auto end = src.find("));", at); if (end == std::string::npos) return false;
+    const auto comma = src.rfind(',', end); const std::string tail = src.substr(comma + 1, end - comma - 1);
+    value = tail.find("true") != std::string::npos; return true;
+}
+// whether the layout declares a parameter of any kind with this id
+inline bool declares(const std::string& src, const std::string& id) { return src.find("ParameterID{\"" + id + "\",1}") != std::string::npos || src.find("addFloat(layout,\"" + id + "\",") != std::string::npos; }
 
 struct Audio { int sr = 44100; std::vector<float> x; };
 
@@ -105,7 +135,14 @@ inline Balance balance(const std::vector<float>& x, int sr, const choir::FXParam
     choir::FXParams l = p; l.mix = 0.f;
     Balance b;
     b.choir = rms(render(x, sr, c), m);
-    b.lead = (1.0 - p.mix) * rms(render(x, sr, l), m);
+    // with AUTO LEVEL the lead is scaled by the same match gain as everything else
+    double match = 1.0;
+    if (p.levelMatch)
+    {
+        const double ratio = choir::StagedChoir::kMatchedChoirRatio * std::pow(10.0, p.choirLevelDb / 20.0), dry = 1.0 - p.mix, c = p.mix * ratio;
+        match = 1.0 / std::sqrt(dry * dry + c * c);
+    }
+    b.lead = (1.0 - p.mix) * match * rms(render(x, sr, l), m);
     b.total = rms(render(x, sr, p), m);
     b.input = rms(x, m);
     return b;

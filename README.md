@@ -1,31 +1,17 @@
-# OmniChoir FX 0.8.0 — live vocal choirification + full-take SATB scan + external singer tools
+# SkellyChoir 0.9.0 (formerly OmniChoir FX) — live vocal choirification + full-take SATB scan + external singer tools
 
 **VST3 effect source project — not a compiled plugin.** This is an upgrade of the OmniChoir FX starter using your original JS stage, worklet, renderer, latest `omnichoir-demo.js`, the five photographic references, and the screenshot of the larger GUI. The original JS files are kept verbatim in `Reference/` for continued native porting. The browser `AudioWorklet` itself cannot execute as a native VST3 audio callback; the relevant stage/mic/group interaction patterns and acoustic concepts are translated into C++.
 
-## SkellKey hub-free automatic Key/Scale link (Windows)
+## Automatic SkellKey sync (no SkellyHub required)
 
-OmniChoir now listens automatically for the user's explicit **SEND TO TUNE**
-action in SkellKey. If SkellKey publishes a confirmed Key/Scale/A4 packet,
-OmniChoir follows the Major/Minor Key/Scale using its existing host parameters;
-there is no more Follow Key button and no separate Hub/Python installer.
-When nothing is being sent, its original manual Key and Scale controls remain
-available. The last received tuning remains in the project after the sender
-stops, while audio stays on its original synthesis path. The received A4 is
-tracked for future choir tuning modes but does **not** currently change the
-choir's underlying A440 synthesis; no unbenchmarked DSP change is introduced.
-
-SkellCore uses Windows same-session shared memory; other platforms retain
-the optional older localhost Hub transport. Publishing is opt-in at the
-SkellKey sender, is not performed in a realtime audio callback, and expires
-after 5 seconds when the sender crashes.
-
+SkellyChoir automatically receives confirmed Key/Scale/A4 tuning published by **Send to Tune** in SkellKey over SkellCore's same-session shared tuning bus on Windows. Key and Scale drive the existing harmony parameters; A4 is received and available for future synthesis support, but does not retune the current choir engine. No new host automation IDs are introduced, so existing FL Studio projects remain compatible. When the sender is unavailable, manual Key and Scale remain usable.
 
 ## v0.8 — Listen mode, key and scale, consonants, your own styles (this release)
 
 **Listen**: play your vocal through once; the plugin analyses it into notes (piano roll, editable) and the choir then sings that score in your key, in time with the host.
 You choose the **key and scale** (nothing is detected). **Consonants** pass through cleanly instead of being smeared; **Swell** makes the choir follow your dynamics and **Pulse** breathes in time with the song;
 save and load **your own styles**; a first-run tour and a remembered window size. `scripts/build_listening_pack.sh` renders your vocal through every feature so you can hear it; CI now also takes screenshots of every tab.
-Measurements, what is and is not verified, and the known limits: **`docs/V0_8_CHANGELOG.md`**. The JUCE layer has still never been compiled against real JUCE and nothing has been listened to.
+What changed in 0.9 (rename, themes, skull button, independent mic and lead) and what is still open: **`docs/V0_9_CHANGELOG.md`**. Measurements, what is and is not verified, and the known limits: **`docs/V0_8_CHANGELOG.md`**. The JUCE layer has still never been compiled against real JUCE and nothing has been listened to.
 
 ## v0.7 — styles, MIDI chords, auto level and an Easy mode
 
@@ -99,13 +85,13 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --parallel 2
 ```
 
-Or publish the **contents** of this folder at the root of your GitHub repository and use **Actions → Build, test and validate OmniChoir FX → Run workflow** for Windows, macOS and Linux artifacts (the workflow also runs the tests and pluginval).
+Or publish the **contents** of this folder at the root of your GitHub repository and use **Actions → Build, test and validate SkellyChoir → Run workflow** for Windows, macOS and Linux artifacts (the workflow also runs the tests and pluginval).
 
 The plugin is an **audio effect**, not an instrument. It can be placed on a vocal track in REAPER, Ableton, FL Studio, Cubase, etc. **VST3 does not run in Logic Pro; AU support would need to be added.** The JUCE plugin **has not been compiled or host-tested in this sandbox** because this environment cannot reach the JUCE source repository. Source-level validation and native DSP tests are separate from actual VST3 host validation.
 
 ## Everyday use
 
-**Live:** Insert OmniChoir FX onto a *clean monophonic vocal track*. Set `PROCESS` = Live, `CHOIR ON` and adjust `MIX`. Start with 50–75% choir blend for intelligibility. Adjust `HUMANIZE` and `CHARACTER` to hear different voice-layer variation; position the 4 sections in the cathedral and move the mic.
+**Live:** Insert SkellyChoir onto a *clean monophonic vocal track*. Set `PROCESS` = Live, `CHOIR ON` and adjust `MIX`. Start with 50–75% choir blend for intelligibility. Adjust `HUMANIZE` and `CHARACTER` to hear different voice-layer variation; position the 4 sections in the cathedral and move the mic.
 
 **Quick input Scan:** Play the DAW vocal and press `SCAN LIVE INPUT`. Four seconds of incoming pitch estimates are gathered. Switch to scan/harmony processing if desired. This tracks a **pitch class**, not the full melody/chords.
 
@@ -129,7 +115,7 @@ The portable CLI is intentionally limited to **little-endian mono/stereo PCM16 o
 
 ## Test results and audio comparison
 
-**Tested natively (no JUCE)** - 23 checks, one command: `scripts/run_tests.sh` (see `docs/BUILD_AND_TEST.md`).
+**Tested natively (no JUCE)** - 29 checks, one command: `scripts/run_tests.sh` (see `docs/BUILD_AND_TEST.md`).
 
 These verify silence numerical safety, pitch detection, stage stereo movement, 44.1/48/96-kHz processing, 4-second scan behavior, full-note score segmentation, SATB editing and finite export-DSP samples. The included CLI was also used to scan a 10-second example into 12 detected notes and render the resulting full-length stereo WAV in `Preview/`.
 
