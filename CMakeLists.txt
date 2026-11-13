@@ -135,6 +135,11 @@ if(OMNICHOIR_BUILD_TESTS)
     add_executable(OmniChoirPresetTests tests/preset_tests.cpp Source/StagedChoir.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
     target_compile_features(OmniChoirPresetTests PRIVATE cxx_std_17)
     add_test(NAME stage_presets COMMAND OmniChoirPresetTests)
+    # v0.9 WIP7: room changes under an active reverb tail must not click.
+    add_executable(OmniChoirRoomSwitchTests tests/room_switch_tests.cpp
+        Source/StagedChoir.cpp Source/ChoirFX.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp)
+    target_compile_features(OmniChoirRoomSwitchTests PRIVATE cxx_std_17)
+    add_test(NAME room_switch_click_regression COMMAND OmniChoirRoomSwitchTests)
     add_executable(OmniChoirStemMixerTests tests/stem_mixer_tests.cpp Source/Offline/ExternalStemMixer.cpp)
     target_compile_features(OmniChoirStemMixerTests PRIVATE cxx_std_17)
     add_test(NAME external_singer_stems COMMAND OmniChoirStemMixerTests)

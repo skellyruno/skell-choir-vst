@@ -29,6 +29,7 @@ TESTS=(
   "convolver_tests|tests/convolver_tests.cpp|"
   "features_tests|tests/features_tests.cpp $STAGED|"
   "preset_tests|tests/preset_tests.cpp $STAGED|"
+  "room_switch_tests|tests/room_switch_tests.cpp $STAGED|"
   "stem_mixer_tests|tests/stem_mixer_tests.cpp Source/Offline/ExternalStemMixer.cpp|"
   "fulltake_tests|tests/fulltake_tests.cpp Source/Offline/FullTakeScan.cpp $ENGINE|"
   "balance_tests|tests/balance_tests.cpp $STAGED|$ROOT"

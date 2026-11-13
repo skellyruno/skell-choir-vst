@@ -39,15 +39,21 @@ inline constexpr StagePreset kStagePresets[] = {
     { "Chapel", "A small stone chapel: intimate, close, a bright 1.8 s ring.",
       { -3.4f, -1.2f, 1.2f, 3.4f }, { 4.6f, 4.0f, 4.0f, 4.6f }, { .84f, .82f, .82f, .84f },
       0.f, .2f, .45f, 3, .34f, 1.8f, .3f, .8f, .4f, .09f, 2.0f, .5f, .8f },
-    { "Gospel Stage", "A wide front-of-stage arc, close and present, a bright live room.",
+    { "Gospel Stage", "A wide front-of-stage arc, close and present, a tight, bright live room that stops when the singing does.",
       { -7.2f, -2.6f, 2.6f, 7.2f }, { 4.2f, 3.4f, 3.4f, 4.2f }, { .86f, .84f, .84f, .86f },
-      0.f, 0.f, .9f, 4, .5f, 1.6f, .45f, .6f, .33f, .07f, 1.8f, .66f, .85f },
+      0.f, 0.f, .9f, 4, .5f, 1.3f, .5f, .6f, .30f, .07f, 1.8f, .66f, .85f },
     { "Stadium Anthem", "A vast open space: a very wide choir, far back, long late reflections.",
       { -8.4f, -2.8f, 2.8f, 8.4f }, { 10.5f, 9.5f, 9.5f, 10.5f }, { .92f, .9f, .9f, .92f },
       0.f, -3.5f, 2.0f, 4, 1.f, 3.9f, .3f, .5f, .5f, .3f, 3.6f, .75f, .85f },
     { "Headphone Choir", "A binaural head in the middle of the choir: close, enveloping, minimal room.",
       { -3.8f, -1.3f, 1.3f, 3.8f }, { 2.4f, 1.8f, 1.8f, 2.4f }, { .8f, .8f, .8f, .8f },
       0.f, 0.f, .4f, 5, .3f, 1.2f, .5f, .75f, .28f, .05f, 1.5f, .6f, .8f },
+    { "Graveyard", "Open night air: the choir stands among the stones, thin and far, a short airy tail with no hall at all.",
+      { -6.8f, -2.4f, 2.4f, 6.8f }, { 8.6f, 7.6f, 7.6f, 8.6f }, { .82f, .8f, .8f, .82f },
+      0.f, -1.5f, 1.8f, 0, .9f, .9f, .85f, .15f, .16f, 0.f, 2.4f, .45f, .9f },
+    { "Crypt", "A low stone vault: close, dark and dense, a heavy ring that hangs on every note, the hall swallowing the choir.",
+      { -2.6f, -.9f, .9f, 2.6f }, { 3.8f, 3.2f, 3.2f, 3.8f }, { .88f, .86f, .86f, .88f },
+      0.f, .6f, .35f, 2, .22f, 3.6f, .08f, .95f, .55f, .3f, 3.2f, .7f, .7f },
 };
 inline constexpr int kNumStagePresets = (int) (sizeof(kStagePresets) / sizeof(kStagePresets[0]));
 

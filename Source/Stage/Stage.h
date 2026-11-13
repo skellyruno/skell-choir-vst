@@ -7,6 +7,7 @@ namespace oc {
 
 struct PerformerSpec { int section = 0; double x = 0, y = 0, z = 1.6; };
 
+constexpr double kTailMinDistance = 1.5, kTailDistanceExponent = 1.0;   // see ChoirStage::layout
 struct StageConfig
 {
     double sampleRate = 48000;
@@ -171,6 +172,18 @@ private:
             double k = sizeK, moved = std::sqrt(dx * dx * k * k + dy * dy * k);
             spatial->setSingerFocus(j, std::max(smoothstep((moved - 0.4) / 1.6), listenerMoved));
         }
+        {   // moving the microphone away from the choir thins the direct voice (1/distance) but a room's diffuse field stays put, so
+            // the tail is raised by the distance ratio against where the preset puts the microphone. At that spot (the default) it is exactly 1.
+            double d = 0, d0 = 0;
+            for (int s = 0; s < kNumSections; ++s)
+            {
+                d  += std::hypot(centroids[s].x - mics.mainPos.x, centroids[s].y - mics.mainPos.y);
+                d0 += std::hypot(centroids[s].x - home.x, centroids[s].y - home.y);
+            }
+            d = std::max(d / kNumSections, kTailMinDistance); d0 = std::max(d0 / kNumSections, kTailMinDistance);
+            const double trim = d == d0 ? 1.0 : clampv(std::pow(d / d0, kTailDistanceExponent), 0.5, 2.5);
+            spatial->setLateTrim(trim);
+        }
         stageValid = true;
     }
 
@@ -219,8 +232,10 @@ private:
         a.on = a.cutDb < -0.01;
         if (a.on)   // the plugin shelves each section and the room before the mix adds them: the same filter on that sum
         {
-            const double rg = reverbSmoothed;
-            for (int i = 0; i < n; ++i)
+            // the room level ramps across the block exactly as the mix below would have done it, so a new reverb level does not step here
+            const double rgT = clampv(reverbTarget, 0.0, 1.5), rgStep = (rgT - reverbSmoothed) / n;
+            double rg = reverbSmoothed;
+            for (int i = 0; i < n; ++i, rg += rgStep)
             {
                 double l = a.shelfL.process(dirL[(size_t) i] + rg * roomL[(size_t) i]), r = a.shelfR.process(dirR[(size_t) i] + rg * roomR[(size_t) i]);
                 dirL[(size_t) i] = (float) l; dirR[(size_t) i] = (float) r; roomL[(size_t) i] = 0; roomR[(size_t) i] = 0;
@@ -289,12 +304,15 @@ public:
             spatial.renderSinger(0, mono.data(), n);
             spatial.finishBlock(dirL.data(), dirR.data(), roomL.data(), roomR.data(), n);
         }
-        const double rg = choir.reverbSmoothed;
+        // the lead's room level follows the choir's, ramped across the block so a new reverb level does not step
+        const double rgTo = choir.reverbSmoothed, rgFrom = rgKnown ? rgPrev : rgTo;
+        rgPrev = rgTo; rgKnown = true;
         for (int i = 0; i < n; ++i)
         {
             float dl = inL[i], dr = inR[i];
             if (!staged) { outL[i] = dl; outR[i] = dr; continue; }
             double m = from + (to - from) * (i + 1) / n;
+            const double rg = rgFrom + (rgTo - rgFrom) * (i + 1) / n;
             double pl = kLeadPlacedLevel * (dirL[(size_t) i] + roomL[(size_t) i] * rg), pr = kLeadPlacedLevel * (dirR[(size_t) i] + roomR[(size_t) i] * rg);
             outL[i] = (float) (dl + (pl - dl) * m); outR[i] = (float) (dr + (pr - dr) * m);
         }
@@ -304,6 +322,7 @@ public:
 private:
     int block; SpatialRenderer spatial;
     double dx = 0, dy = 0, mix = 0; bool staged = false;
+    double rgPrev = 1; bool rgKnown = false;   // the reverb level at the end of the last block
     std::vector<float> mono, dirL, dirR, roomL, roomR;
 };
 

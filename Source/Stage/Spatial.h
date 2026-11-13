@@ -75,9 +75,11 @@ public:
             for (auto& t : s.direct) t.lpState = 0;
         }
         late.reset();
+        lateGainsKnown = false;
         writePos = 0;
     }
 
+    void setLateTrim(double g) { lateTrim = g; }
     void setRoom(const RoomSettings& r)
     {
         if (r == room && !geometryDirty) return;
@@ -222,17 +224,26 @@ public:
         const auto& mc = mainArray.capsules;
         double mainDiffuse = 0.5 * (kDiffuse[mc[0].pattern] + kDiffuse[mc[1].pattern]);
         double lm = room.lateLevel * kLateGain * mics.mainLevel * 0.6 * mainDiffuse, lr = room.lateLevel * kLateGain * mics.roomLevel;
+        if (lateTrim != 1.0) { lm *= lateTrim; lr *= lateTrim; }   // the diffuse field does not thin out as the microphone leaves the choir (see Stage::layout)
         double bl = 1, br = 1;
         if (lateBalance != 0) leanGains(lateBalance, bl, br);
+        // the late field's level depends on the main array (its capsules' diffuse-field gain): a new array must not step it. It ramps over the
+        // block; when nothing changed the ramp is flat and the arithmetic is exactly what it was.
+        if (!lateGainsKnown) { prevLateMain = lm; prevLateRoom = lr; lateGainsKnown = true; }
+        const double lm0 = prevLateMain, lr0 = prevLateRoom;
         for (int i = 0; i < n; ++i)
         {
-            roomOutL[i] += (float) (bl * (lm * lmL[i] + lr * lrL[i]));
-            roomOutR[i] += (float) (br * (lm * lmR[i] + lr * lrR[i]));
+            const double f = (double) (i + 1) / n, lmi = lm0 + (lm - lm0) * f, lri = lr0 + (lr - lr0) * f;
+            roomOutL[i] += (float) (bl * (lmi * lmL[i] + lri * lrL[i]));
+            roomOutR[i] += (float) (br * (lmi * lmR[i] + lri * lrR[i]));
         }
+        prevLateMain = lm; prevLateRoom = lr;
         writePos = (writePos + n) & ringMask;
     }
 
 private:
+    double lateTrim = 1.0;
+    double prevLateMain = 0, prevLateRoom = 0; bool lateGainsKnown = false;   // the late field's gains at the end of the last block (see finishBlock)
     void rebuildArrays()
     {
         mainArray = buildArray(mics.mainType, mics.mainPos, 0, mics.mainSpacing);

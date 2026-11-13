@@ -64,6 +64,7 @@ public:
         std::fill(std::begin(dampState), std::end(dampState), 0.0);
         std::fill(std::begin(writePos), std::end(writePos), 0);
         lfoPhase = 0;
+        snapLengths = true;
     }
     void configure(const RoomSettings& s, const RoomGeometry& g)
     {
@@ -74,6 +75,7 @@ public:
             int n = (int) (g.meanFreePathMs * factors[i] * 0.001 * sr);
             n = clampv(n | 1, 31, maxLen - 8);
             lineLen[i] = n;
+            if (snapLengths) lenNow[i] = n;
             feedback[i] = std::pow(10.0, -3.0 * n / sr / rt60);
         }
         double cutoff = lerp(12000, 1800, clampv(s.absorption, 0.0, 1.0));
@@ -84,6 +86,7 @@ public:
 
     void process(const float* inL, const float* inR, float* mainL, float* mainR, float* roomL, float* roomR, int n)
     {
+        snapLengths = false;
         double o[8], m[8];
         for (int s = 0; s < n; ++s)
         {
@@ -93,7 +96,14 @@ public:
             double mod = 2 * std::sin(kTwoPi * lfoPhase);
             for (int i = 0; i < 8; ++i)
             {
-                double delay = lineLen[i];
+                // a new room: the read points glide to their new lengths (about 0.1 samples per sample) instead of jumping, which clicked.
+                // At rest lenNow == lineLen exactly, so nothing changes for a room that is not being changed.
+                if (lenNow[i] != lineLen[i])
+                {
+                    const double diff = lineLen[i] - lenNow[i];
+                    lenNow[i] = std::fabs(diff) <= kLengthSlew ? (double) lineLen[i] : lenNow[i] + (diff > 0 ? kLengthSlew : -kLengthSlew);
+                }
+                double delay = lenNow[i];
                 if (i == 0) delay = delay + mod + 3; else if (i == 4) delay = delay - (mod - 3);
                 int whole = (int) delay; double frac = delay - whole;
                 int i0 = writePos[i] - whole; if (i0 < 0) i0 += maxLen;
@@ -134,7 +144,10 @@ private:
     }
     double sr; int maxLen = 0;
     std::vector<float> line[8];
+    static constexpr double kLengthSlew = 0.1;
     int lineLen[8] {}, writePos[8] {};
+    double lenNow[8] {};
+    bool snapLengths = true;   // until the first audio after a reset: a new instance starts in its room, it does not glide to it
     double feedback[8] {}, dampState[8] {}, dampCoef = 0.5;
     AP ap[4];
     double lfoPhase = 0, lfoInc = 0;
