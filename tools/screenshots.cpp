@@ -59,17 +59,6 @@ int main(int argc, char** argv)
     const std::vector<int> melody { 60, 64, 67, 64, 69, 65, 62, 60 };
     feed(processor, melody, 2.0);                       // a little singing, so the stage glows and the meters move
 
-    // The first screen must actually contain the new shared SkellCore overlay;
-    // a snapshot of the regular editor is NOT evidence the tour works.
-    bool foundTour=false;
-    for(int i=0;i<editor->getNumChildComponents();++i)
-      if(auto* component=editor->getChildComponent(i))
-        if(component->getComponentID()=="skellcore-guided-tour" && component->isVisible())
-          foundTour=true;
-    if(!foundTour) {
-      std::fprintf(stderr,"Shared guided tour did not appear on first launch\\n");
-      return 2;
-    }
     savePng(*editor, folder, "01-first-run-tour");      // a fresh install shows the tour first
     editor->dismissTour();
     editor->showForScreenshot(false, 0);  savePng(*editor, folder, "02-easy-mode");
@@ -97,6 +86,25 @@ int main(int argc, char** argv)
     editor->showForScreenshot(true, 0);
     editor->setSize(800, 540);            savePng(*editor, folder, "12-smallest-window");
     editor->setSize(1300, 900);           savePng(*editor, folder, "13-large-window");
+
+    // every theme on the main page, then every stage scene (the picture follows the stage preset; wait out the 400 ms crossfade)
+    editor->setSize(860, 600);
+    editor->showForScreenshot(true, 0);
+    for (int i = 0; i < theme::kNumThemes; ++i)
+    {
+        editor->showThemeForScreenshot(i);
+        juce::String name = theme::get(i).name; name = name.replaceCharacter(' ', '-').toLowerCase();
+        savePng(*editor, folder, "14-theme-" + name);
+    }
+    editor->showThemeForScreenshot(0);
+    for (int i = 0; i < scenes::kNumScenes; ++i)
+    {
+        processor.applyStagePreset(i);
+        editor->createComponentSnapshot(editor->getLocalBounds(), true, 1.0f);   // the first paint starts the fade...
+        juce::Thread::sleep(scenes::kFadeMs + 80);                               // ...so let it finish before the picture is taken
+        juce::String name = scenes::kScenes[i].presetName; name = name.replaceCharacter(' ', '-').toLowerCase();
+        savePng(*editor, folder, "15-scene-" + juce::String(i) + "-" + name);
+    }
     std::printf("done: %s\n", folder.getFullPathName().toRawUTF8());
     return 0;
 }

@@ -25,7 +25,9 @@ enum NotificationType { dontSendNotification, sendNotification, sendNotification
 
 class String {
 public:
-    String() = default; String(const char*) {} String(const String&) = default; String(String&&) = default;
+    String replaceCharacter(juce_wchar, juce_wchar) const { return *this; } String toLowerCase() const { return *this; }
+public:
+    String() = default; const char* toRawUTF8() const { return ""; } String(const char*) {} String(const std::string&) {} std::string toStdString() const { return {}; } String(const String&) = default; String(String&&) = default;
     String& operator=(const String&) = default;
     template <class T, class = std::enable_if_t<std::is_arithmetic_v<T>>> explicit String(T) {}
     String(float, int, bool = false) {} String(double, int, bool = false) {}
@@ -34,6 +36,7 @@ public:
     bool isNotEmpty() const { return true; } bool isEmpty() const { return false; }
     double getDoubleValue() const { return 0; } int getIntValue() const { return 0; }
     String& operator+=(const String&) { return *this; }
+    bool startsWith(const String&) const { return false; } String fromFirstOccurrenceOf(const String&, bool, bool) const { return *this; }
     bool operator==(const String&) const { return true; } bool operator!=(const String&) const { return false; }
     bool operator==(const char*) const { return true; } bool operator!=(const char*) const { return false; }
     void clear() {}
@@ -41,8 +44,13 @@ public:
     friend String operator+(const char*, const String&) { return {}; }
     friend String operator+(const String&, const char*) { return {}; }
 };
-class StringArray { public: StringArray() = default; StringArray(std::initializer_list<const char*>) {} String operator[](int) const { return {}; } int size() const { return 0; } };
-class File { public: File() = default; bool existsAsFile() const { return true; } String getFileName() const { return {}; } String getFullPathName() const { return {}; }
+class StringArray { public: static StringArray fromTokens(const String&, const String&, const String&) { return {}; } StringArray() = default; StringArray(std::initializer_list<const char*>) {} void add(const String&) {} String operator[](int) const { return {}; } int size() const { return 0; } };
+template <class T> class Array { public: int size() const { return 0; } const T* begin() const { return nullptr; } const T* end() const { return nullptr; } T operator[](int) const { return {}; } };
+class File { public: enum SpecialLocationType { userApplicationDataDirectory }; enum { findFiles = 1 };
+    static File getCurrentWorkingDirectory() { return {}; } static File getSpecialLocation(SpecialLocationType) { return {}; } File getChildFile(const String&) const { return *this; } bool createDirectory() const { return true; }
+    Array<File> findChildFiles(int, bool, const String& = "*") const { return {}; } bool replaceWithText(const String&) const { return true; } String loadFileAsString() const { return {}; }
+    int64 getSize() const { return 0; } bool isAChildOf(const File&) const { return false; } bool copyFileTo(const File&) const { return true; } File getParentDirectory() const { return *this; } bool create() const { return true; } bool isDirectory() const { return true; } bool copyDirectoryTo(const File&) const { return true; } String getFileNameWithoutExtension() const { return {}; } void revealToUser() const {}
+    File(); bool existsAsFile() const { return true; } String getFileName() const { return {}; } String getFullPathName() const { return {}; }
     File withFileExtension(const String&) const { return *this; } File(const String&) {} bool operator!=(const File&) const { return false; } bool operator==(const File&) const { return true; } };
 
 template <class T> struct Point {
@@ -50,6 +58,7 @@ template <class T> struct Point {
     T getDistanceFrom(Point o) const { return (T) std::hypot((double) (x - o.x), (double) (y - o.y)); }
 };
 template <class T> struct Rectangle {
+    Rectangle getUnion(Rectangle) const { return *this; } Rectangle withHeight(T) const { return *this; } Rectangle withTrimmedTop(T) const { return *this; } Rectangle withTrimmedLeft(T) const { return *this; } Rectangle withTrimmedBottom(T) const { return *this; }
     T x{}, y{}, w{}, h{}; Rectangle() = default; Rectangle(T a, T b, T c, T d) : x(a), y(b), w(c), h(d) {}
     T getX() const { return x; } T getY() const { return y; } T getWidth() const { return w; } T getHeight() const { return h; }
     T getRight() const { return x + w; } T getBottom() const { return y + h; } T getCentreX() const { return x + w / 2; } T getCentreY() const { return y + h / 2; }
@@ -59,12 +68,13 @@ template <class T> struct Rectangle {
     Rectangle translated(T dx, T dy) const { return *this; }
     Rectangle<float> toFloat() const { return { (float) x, (float) y, (float) w, (float) h }; }
     Rectangle<int> toNearestInt() const { return { (int) x, (int) y, (int) w, (int) h }; }
+    Rectangle withTrimmedRight(T) const { return *this; } bool contains(Point<T>) const { return false; }
     Rectangle removeFromTop(T) { return *this; } Rectangle removeFromLeft(T) { return *this; } Rectangle removeFromRight(T) { return *this; } Rectangle removeFromBottom(T) { return *this; }
     Rectangle withSizeKeepingCentre(T, T) const { return *this; }
     void setHeight(T v) { h = v; }
 };
 struct Colour {
-    Colour() = default; constexpr Colour(uint32) {}
+    Colour() = default; constexpr Colour(uint32) {} uint8 getAlpha() const { return 255; }
     Colour withAlpha(float) const { return *this; } Colour brighter(float = .4f) const { return *this; } Colour darker(float = .4f) const { return *this; }
     Colour withMultipliedSaturation(float) const { return *this; } Colour withMultipliedAlpha(float) const { return *this; }
 };
@@ -75,17 +85,19 @@ class ColourGradient { public: ColourGradient(Colour, float, float, Colour, floa
 class PathStrokeType { public: enum JointStyle { mitered, curved, beveled }; enum EndCapStyle { butt, square, rounded };
     PathStrokeType(float, JointStyle = mitered, EndCapStyle = butt) {} };
 class AffineTransform {};
-class Path { public:
+class Path { public: void addRectangle(Rectangle<float>) {} void setUsingNonZeroWinding(bool) {}
     void startNewSubPath(float, float) {} void lineTo(float, float) {} void closeSubPath() {}
     void cubicTo(float, float, float, float, float, float) {} void quadraticTo(float, float, float, float) {}
     void addRoundedRectangle(Rectangle<float>, float) {} void addTriangle(float, float, float, float, float, float) {}
     void addCentredArc(float, float, float, float, float, float, float, bool) {} };
-class Image { public: bool isValid() const { return true; } };
+class Image { public: enum PixelFormat { RGB, ARGB, SingleChannel }; Image() = default; Image(PixelFormat, int, int, bool) {} bool isValid() const { return true; } int getWidth() const { return 1; } int getHeight() const { return 1; } };
 struct ImageCache { static Image getFromMemory(const void*, int) { return {}; } };
 class RectanglePlacement { public: enum { xLeft = 1, xRight = 2, xMid = 4, yTop = 8, yBottom = 16, yMid = 32, stretchToFit = 64, fillDestination = 128, onlyReduceInSize = 256, onlyIncreaseInSize = 512, doNotResize = 768 };
     RectanglePlacement(int) {} };
-class Justification { public: enum Flags { left = 1, right = 2, horizontallyCentred = 4, centred = 36, centredLeft = 33, centredRight = 34 }; Justification(int) {} };
+class Justification { public: enum Flags { topLeft = 9, left = 1, right = 2, horizontallyCentred = 4, centred = 36, centredLeft = 33, centredRight = 34 }; Justification(int) {} };
 class Graphics { public:
+    Graphics() = default; explicit Graphics(Image&) {} enum ResamplingQuality { lowResamplingQuality, mediumResamplingQuality, highResamplingQuality };
+    void setImageResamplingQuality(ResamplingQuality) {} void drawImageAt(const Image&, int, int) {}
     void setColour(Colour) {} void setGradientFill(const ColourGradient&) {} void setFont(const Font&) {} void setOpacity(float) {}
     void fillAll() {} void fillAll(Colour) {}
     void fillRect(Rectangle<float>) {} void fillRect(Rectangle<int>) {} void fillRect(int, int, int, int) {} void fillRect(float, float, float, float) {}
@@ -93,6 +105,7 @@ class Graphics { public:
     void drawRoundedRectangle(Rectangle<float>, float, float) {} void drawRoundedRectangle(float, float, float, float, float, float) {}
     void fillEllipse(float, float, float, float) {} void fillEllipse(Rectangle<float>) {}
     void drawEllipse(float, float, float, float, float) {}
+    void drawEllipse(Rectangle<float>, float) {}
     void drawLine(float, float, float, float, float = 1.f) {}
     void fillPath(const Path&) {} void strokePath(const Path&, const PathStrokeType&) {}
     void drawText(const String&, int, int, int, int, Justification, bool = true) {} void drawText(const String&, Rectangle<float>, Justification, bool = true) {}
@@ -102,9 +115,12 @@ class Graphics { public:
     void saveState() {} void restoreState() {} bool reduceClipRegion(const Path&, const AffineTransform& = {}) { return true; } bool reduceClipRegion(Rectangle<int>) { return true; }
     struct ScopedSaveState { explicit ScopedSaveState(Graphics&) {} };
 };
-struct Time { static double getMillisecondCounterHiRes() { return 0; } };
+struct MessageManager { static void callAsync(std::function<void()>) {} };
+struct Time { static double getMillisecondCounterHiRes() { return 0; } static uint32 getMillisecondCounter() { return 0; } };
 struct MouseCursor { enum StandardCursorType { NormalCursor, DraggingHandCursor, PointingHandCursor }; };
-struct MouseEvent { Point<float> position; };
+struct ModifierKeys { bool isPopupMenu() const { return false; } bool isShiftDown() const { return false; } };
+struct MouseWheelDetails { float deltaY = 0; };
+struct MouseEvent { Point<float> position; ModifierKeys mods; };
 class LookAndFeel { public: virtual ~LookAndFeel() = default; void setColour(int, Colour) {} };
 class Timer { public: virtual ~Timer() = default; virtual void timerCallback() = 0; void startTimerHz(int) {} void stopTimer() {} };
 class TooltipClient { public: virtual ~TooltipClient() = default; };
@@ -113,6 +129,7 @@ class Component {
 public:
     virtual ~Component() = default;
     virtual void paint(Graphics&) {} virtual void resized() {}
+    virtual void mouseWheelMove(const MouseEvent&, const MouseWheelDetails&) {}
     virtual void mouseDown(const MouseEvent&) {} virtual void mouseDrag(const MouseEvent&) {} virtual void mouseUp(const MouseEvent&) {}
     virtual void mouseMove(const MouseEvent&) {} virtual void mouseExit(const MouseEvent&) {} virtual void mouseDoubleClick(const MouseEvent&) {}
     void setBounds(int, int, int, int) {} void setBounds(Rectangle<int>) {}
@@ -125,7 +142,7 @@ public:
     void setLookAndFeel(LookAndFeel*) {}
     Colour findColour(int) const { return {}; } void setColour(int, Colour) {}
     bool isMouseOver(bool = false) const { return false; } bool isMouseOverOrDragging(bool = false) const { return false; }
-    void setSize(int, int) {}
+    void setSize(int, int) {} Image createComponentSnapshot(Rectangle<int>, bool = true, float = 1.0f) { return {}; } void toFront(bool) {} Rectangle<int> getBounds() const { return {}; } bool isVisible() const { return true; }
     template <class T> class SafePointer { public: SafePointer(T*) {} bool operator==(std::nullptr_t) const { return false; } bool operator!=(std::nullptr_t) const { return true; } T* operator->() const { return nullptr; } };
 };
 class TooltipWindow : public Component { public: enum ColourIds { backgroundColourId = 1, textColourId, outlineColourId }; TooltipWindow(Component* = nullptr, int = 700) {} };
@@ -141,12 +158,13 @@ public:
     std::function<String(double)> textFromValueFunction; std::function<double(const String&)> valueFromTextFunction;
 };
 class Button : public Component, public SettableTooltipClient { public:
+    Button() = default; explicit Button(const String&) {} virtual void paintButton(Graphics&, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) {}
     std::function<void()> onClick; void setClickingTogglesState(bool) {} void setToggleState(bool, NotificationType) {} bool getToggleState() const { return false; }
     void setButtonText(const String&) {} String getButtonText() const { return {}; } };
 class TextButton : public Button { public: enum ColourIds { buttonColourId = 1, buttonOnColourId, textColourOffId, textColourOnId }; TextButton() = default; explicit TextButton(const String&) {} };
 class ComboBox : public Component, public SettableTooltipClient { public:
     enum ColourIds { backgroundColourId = 1, textColourId, outlineColourId, buttonColourId, arrowColourId };
-    void addItem(const String&, int) {} void addItemList(const StringArray&, int) {} void setSelectedId(int, NotificationType = sendNotificationAsync) {} int getSelectedId() const { return 0; }
+    void clear(NotificationType = sendNotificationAsync) {} void addItem(const String&, int) {} void addSectionHeading(const String&) {} void addSeparator() {} void addItemList(const StringArray&, int) {} void setSelectedId(int, NotificationType = sendNotificationAsync) {} int getSelectedId() const { return 0; }
     void setTextWhenNothingSelected(const String&) {} std::function<void()> onChange; };
 class ScrollBar { public: enum ColourIds { thumbColourId = 1 }; };
 class ListBoxModel { public: virtual ~ListBoxModel() = default; virtual int getNumRows() = 0; virtual void paintListBoxItem(int, Graphics&, int, int, bool) = 0; };
@@ -155,6 +173,7 @@ class ListBox : public Component { public: enum ColourIds { backgroundColourId =
 class PopupMenu { public: enum ColourIds { backgroundColourId = 1, textColourId, headerTextColourId, highlightedBackgroundColourId, highlightedTextColourId };
     class Options { public: Options withTargetComponent(Component*) const { return *this; } Options withTargetComponent(Component&) const { return *this; } };
     void addItem(int, const String&, bool = true, bool = false) {} void showMenuAsync(const Options&, std::function<void(int)>) {} };
+class GlyphArrangement { public: void addLineOfText(const Font&, const String&, float, float) {} Rectangle<float> getBoundingBox(int, int, bool) const { return {}; } };
 class FileBrowserComponent { public: enum FileChooserFlags { openMode = 1, saveMode = 2, canSelectFiles = 4, canSelectDirectories = 8, warnAboutOverwriting = 64 }; };
 class FileChooser { public: FileChooser(const String&, const File& = {}, const String& = {}) {} void launchAsync(int, std::function<void(const FileChooser&)>) {} File getResult() const { return {}; } };
 
@@ -175,8 +194,17 @@ class XmlElement { public: bool hasTagName(const String&) const { return true; }
     int getIntAttribute(const String&, int d = 0) const { return d; } bool getBoolAttribute(const String&, bool d = false) const { return d; } String getStringAttribute(const String&) const { return {}; } };
 class ValueTree;
 template <class T> class AudioBuffer { public: AudioBuffer() = default; AudioBuffer(int, int) {} int getNumSamples() const { return 0; } void clear() {} T* getWritePointer(int) { return nullptr; } const T* getReadPointer(int) const { return nullptr; } int getNumChannels() const { return 0; } };
-class MidiBuffer {}; class MemoryBlock {};
+class MidiMessage { public: bool isNoteOn(bool = false) const { return false; } bool isNoteOff(bool = true) const { return false; } int getNoteNumber() const { return 0; }
+    bool isAllNotesOff() const { return false; } bool isAllSoundOff() const { return false; } bool isSustainPedalOn() const { return false; } bool isSustainPedalOff() const { return false; } };
+struct MidiMessageMetadata { MidiMessage getMessage() const { return {}; } };
+class MidiBuffer { public: const MidiMessageMetadata* begin() const { return nullptr; } const MidiMessageMetadata* end() const { return nullptr; } };
+class MemoryBlock {};
+class InputStream { public: virtual ~InputStream() = default; };
+class MemoryInputStream : public InputStream { public: MemoryInputStream(const void*, size_t, bool) {} };
 class AudioChannelSet { public: static AudioChannelSet stereo() { return {}; } static AudioChannelSet mono() { return {}; } bool isDisabled() const { return false; } bool operator!=(const AudioChannelSet&) const { return false; } bool operator==(const AudioChannelSet&) const { return true; } };
+template <class T> class Optional { public: bool hasValue() const { return false; } T operator*() const { return {}; } const T* operator->() const { static T t; return &t; } };
+class PositionInfo { public: Optional<int64> getTimeInSamples() const { return {}; } Optional<double> getPpqPosition() const { return {}; } Optional<double> getBpm() const { return {}; } };
+class AudioPlayHead { public: Optional<PositionInfo> getPosition() const { return {}; } };
 class AudioProcessorEditor;
 class AudioProcessorParameter { public: virtual ~AudioProcessorParameter() = default; void beginChangeGesture() {} void endChangeGesture() {} void setValueNotifyingHost(float) {} float getDefaultValue() const { return 0; } StringArray getAllValueStrings() const { return {}; } };
 class RangedAudioParameter : public AudioProcessorParameter { public: float convertTo0to1(float v) const { return v; } float convertFrom0to1(float v) const { return v; } };
@@ -196,15 +224,18 @@ public:
     virtual int getNumPrograms() = 0; virtual int getCurrentProgram() = 0; virtual void setCurrentProgram(int) = 0;
     virtual const String getProgramName(int) = 0; virtual void changeProgramName(int, const String&) = 0;
     virtual void getStateInformation(MemoryBlock&) = 0; virtual void setStateInformation(const void*, int) = 0;
+    struct Optional1;
     int getMainBusNumInputChannels() const { return 2; } int getMainBusNumOutputChannels() const { return 2; }
     AudioBuffer<float> getBusBuffer(AudioBuffer<float>&, bool, int) const { return {}; } int getBusCount(bool) const { return 0; } Bus* getBus(bool, int) const { return nullptr; }
     void setLatencySamples(int) {}
+    double getSampleRate() const { return 44100; }
+    class AudioPlayHead* getPlayHead() const { return nullptr; }
     static void copyXmlToBinary(const XmlElement&, MemoryBlock&) {}
     static std::unique_ptr<XmlElement> getXmlFromBinary(const void*, int) { return std::make_unique<XmlElement>(); }
 };
 struct ScopedNoDenormals {};
 class AudioFormatReader { public: int64 lengthInSamples = 0; double sampleRate = 0; unsigned int numChannels = 0; bool read(AudioBuffer<float>*, int, int, int64, bool, bool) { return true; } };
-class AudioFormatManager { public: void registerBasicFormats() {} AudioFormatReader* createReaderFor(const File&) { return nullptr; } };
+class AudioFormatManager { public: void registerBasicFormats() {} AudioFormatReader* createReaderFor(const File&) { return nullptr; } AudioFormatReader* createReaderFor(std::unique_ptr<InputStream>) { return nullptr; } };
 class AudioProcessorEditor : public Component { public: explicit AudioProcessorEditor(AudioProcessor*) {} explicit AudioProcessorEditor(AudioProcessor&) {}
     void setResizable(bool, bool) {} void setResizeLimits(int, int, int, int) {} };
 struct ParameterID { ParameterID(const char*, int) {} ParameterID(const String&, int) {} };
@@ -226,5 +257,9 @@ public:
     class ComboBoxAttachment { public: ComboBoxAttachment(AudioProcessorValueTreeState&, const String&, ComboBox&) {} };
 };
 class CriticalSection {};
-class Thread { public: explicit Thread(const String&) {} virtual ~Thread() = default; virtual void run() = 0; void signalThreadShouldExit() {} bool stopThread(int) { return true; } void startThread() {} };
+struct ScopedJuceInitialiser_GUI {};
+class OutputStream { public: virtual ~OutputStream() = default; bool setPosition(int64) { return true; } };
+class FileOutputStream : public OutputStream { public: explicit FileOutputStream(const File&) {} bool openedOk() const { return true; } bool truncate() { return true; } };
+class PNGImageFormat { public: bool writeImageToStream(const Image&, OutputStream&) { return true; } };
+class Thread { public: static void sleep(int) {} explicit Thread(const String&) {} virtual ~Thread() = default; virtual void run() = 0; void signalThreadShouldExit() {} bool stopThread(int) { return true; } void startThread() {} };
 }

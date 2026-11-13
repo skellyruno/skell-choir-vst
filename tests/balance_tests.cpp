@@ -8,23 +8,6 @@
 
 using namespace ts;
 
-// --- parse the default of one addFloat(layout,"id",...) line out of PluginProcessor.cpp
-static std::vector<std::string> splitArgs(const std::string& s)
-{
-    std::vector<std::string> out; std::string cur;
-    for (char c : s) { if (c == ',') { out.push_back(cur); cur.clear(); } else cur += c; }
-    out.push_back(cur); return out;
-}
-static bool layoutArgs(const std::string& src, const std::string& idToken, std::vector<std::string>& args)
-{
-    const std::string key = "addFloat(layout," + idToken + ",";
-    const auto at = src.find(key); if (at == std::string::npos) return false;
-    const auto end = src.find(");", at); if (end == std::string::npos) return false;
-    args = splitArgs(src.substr(at + 9, end - at - 9));   // [0]=layout [1]=id [2]=name [3]=min [4]=max [5]=step [6]=default
-    return args.size() >= 7;
-}
-static double num(const std::string& t) { return std::atof(t.c_str()); }
-
 int main(int argc, char** argv)
 {
     const std::string root = argc > 1 ? argv[1] : ".";
@@ -40,7 +23,7 @@ int main(int argc, char** argv)
         const Row rows[] = { {"ensemble", d.ensemble}, {"humanize", d.humanize}, {"formant", d.formant}, {"sensitivity", d.sensitivity},
                              {"roomSize", d.roomSize}, {"roomSeconds", d.roomSeconds}, {"absorption", d.absorption}, {"diffusion", d.diffusion},
                              {"wet", d.wet}, {"width", d.width}, {"leadY", d.leadY}, {"leadGain", d.leadGain}, {"mix", d.mix},
-                             {"master", d.master}, {"choirLevel", d.choirLevelDb} };
+                             {"master", d.master}, {"choirLevel", d.choirLevelDb}, {"consonants", d.consonants}, {"swell", d.swell}, {"pulseDepth", d.pulseDepth} };
         for (const auto& r : rows)
         {
             std::vector<std::string> a; CHECK(layoutArgs(src, std::string("\"") + r.id + "\"", a), "parameter '%s' not found in PluginProcessor.cpp", r.id);
@@ -48,6 +31,8 @@ int main(int argc, char** argv)
         }
         std::vector<std::string> g; CHECK(layoutArgs(src, "\"gain\"+s", g), "gain parameter not found");
         CHECK(std::fabs(num(g[6]) - d.gain[0]) < 1e-4, "section gain default drifted");
+        bool matchDefault = false; CHECK(boolDefault(src, "levelMatch", matchDefault), "AUTO LEVEL (levelMatch) is not declared in PluginProcessor.cpp");
+        CHECK(matchDefault == d.levelMatch, "AUTO LEVEL default in the plugin (%d) differs from tests/test_support.h (%d)", (int) matchDefault, (int) d.levelMatch);
         std::vector<std::string> c; layoutArgs(src, "\"choirLevel\"", c);
         CHECK(std::fabs(num(c[3]) + choir::StagedChoir::kChoirLevelMaxDb) < 1e-4 && std::fabs(num(c[4]) - choir::StagedChoir::kChoirLevelMaxDb) < 1e-4,
               "CHOIR LEVEL range in PluginProcessor.cpp (%s..%s) must equal +-kChoirLevelMaxDb", c[3].c_str(), c[4].c_str());
@@ -64,7 +49,7 @@ int main(int argc, char** argv)
         const double vsLead = dB(b.choir) - dB(b.lead), vsInput = dB(b.total) - dB(b.input);
         std::printf("[2] f0 %3.0f Hz: choir %+.1f dB against the lead; whole output %+.1f dB against the input\n", f0, vsLead, vsInput);
         CHECK(vsLead > 0.0 && vsLead < 9.0, "the choir should sit 0..+9 dB over the lead at the defaults, got %+.1f dB", vsLead);
-        CHECK(vsInput > -9.0, "the plugin at its defaults is %.1f dB below its input (limit -9 dB)", vsInput);
+        CHECK(vsInput > -9.0 && vsInput < 4.0, "the plugin at its defaults is %+.1f dB from its input (limit -9..+4 dB)", vsInput);
     }
 
     // 3. that balance does not depend on how loudly the singer sings (gate and tracker must not fade the choir out) --
@@ -98,9 +83,9 @@ int main(int argc, char** argv)
     // 5. CHOIR LEVEL does what it says -----------------------------------------------------------------------------
     {
         const auto x = sungPhrase(sr, 10, std::pow(10.0, -18.0 / 20), 196); const auto m = voicedMask(x, sr);
-        auto at = [&](float db) { auto p = p0; p.mix = 1.f; p.leadGain = 0.f; p.choirLevelDb = db; return dB(rms(render(x, sr, p), m)); };
+        auto at = [&](float db) { auto p = p0; p.levelMatch = false; p.mix = 1.f; p.leadGain = 0.f; p.choirLevelDb = db; return dB(rms(render(x, sr, p), m)); };
         const double base = at(0.f);
-        std::printf("[5] CHOIR LEVEL -12 / -6 / +6 / +12 dB moves the choir by %+.2f / %+.2f / %+.2f / %+.2f dB\n", at(-12) - base, at(-6) - base, at(6) - base, at(12) - base);
+        std::printf("[5] (AUTO LEVEL off) CHOIR LEVEL -12 / -6 / +6 / +12 dB moves the choir by %+.2f / %+.2f / %+.2f / %+.2f dB\n", at(-12) - base, at(-6) - base, at(6) - base, at(12) - base);
         CHECK(std::fabs(at(6) - base - 6) < .7 && std::fabs(at(-6) - base + 6) < .7, "+-6 dB is not +-6 dB");
         CHECK(std::fabs(at(12) - base - 12) < 1.0 && std::fabs(at(-12) - base + 12) < 1.0, "+-12 dB is not +-12 dB");
         CHECK(std::fabs(at(40) - at(12)) < .05 && std::fabs(at(-40) - at(-12)) < .05, "values beyond +-12 dB must be clamped");
@@ -120,6 +105,50 @@ int main(int argc, char** argv)
         (void) prev;
         std::printf("[5] largest sample-to-sample step: before the +12 dB jump %.4f, after %.4f\n", maxStepRef, maxStep);
         CHECK(maxStep < 6.0 * maxStepRef + 1e-3, "CHOIR LEVEL jump clicks (step %.4f vs %.4f before)", maxStep, maxStepRef);
+    }
+
+    // 5c. with AUTO LEVEL on, CHOIR LEVEL moves the choir against the lead and the overall loudness stays put
+    {
+        const auto x = sungPhrase(sr, 10, std::pow(10.0, -18.0 / 20), 196);
+        auto lo = p0, hi = p0; lo.mix = hi.mix = .5f; lo.choirLevelDb = -6.f; hi.choirLevelDb = 6.f;
+        const auto bl = balance(x, sr, lo), bh = balance(x, sr, hi);
+        const double shift = (dB(bh.choir) - dB(bh.lead)) - (dB(bl.choir) - dB(bl.lead)), loudness = dB(bh.total) - dB(bl.total);
+        std::printf("[5c] AUTO LEVEL on, CHOIR LEVEL -6 -> +6 dB: choir against lead moves %+.1f dB, overall loudness %+.1f dB\n", shift, loudness);
+        CHECK(std::fabs(shift - 12.0) < 1.5, "CHOIR LEVEL should move the choir/lead balance by 12 dB, got %+.1f", shift);
+        CHECK(std::fabs(loudness) < 3.0, "overall loudness moved %+.1f dB with CHOIR LEVEL under AUTO LEVEL (limit 3 dB)", loudness);
+    }
+
+    // 5b. AUTO LEVEL: the loudness stays near the input's wherever CHOIR MIX sits (the real-vocal version is in real_vocal_tests)
+    {
+        for (double f0 : { 110.0, 196.0, 330.0 })
+        {
+            const auto x = sungPhrase(sr, 10, std::pow(10.0, -18.0 / 20), f0); const auto m = voicedMask(x, sr);
+            double lo = 1e9, hi = -1e9, offLo = 1e9, offHi = -1e9;
+            for (float mix : { 0.f, .25f, .5f, .78f, 1.f })
+            {
+                auto p = p0; p.mix = mix;
+                const double on = dB(rms(render(x, sr, p), m)) - dB(rms(x, m));
+                lo = std::min(lo, on); hi = std::max(hi, on);
+                p.levelMatch = false;
+                const double off = dB(rms(render(x, sr, p), m)) - dB(rms(x, m));
+                offLo = std::min(offLo, off); offHi = std::max(offHi, off);
+            }
+            std::printf("[5b] f0 %3.0f Hz: output against input across MIX 0..100%%: AUTO LEVEL on %+.1f..%+.1f dB, off %+.1f..%+.1f dB\n", f0, lo, hi, offLo, offHi);
+            CHECK(lo > -3.5 && hi < 3.5, "AUTO LEVEL leaves the loudness %+.1f..%+.1f dB from the input (limit +-3.5 dB)", lo, hi);
+            CHECK(hi - lo < offHi - offLo, "AUTO LEVEL did not make the loudness steadier than it is without it");
+        }
+        // it does nothing at MIX 0 and with the choir off: bit-identical to AUTO LEVEL off
+        const auto x = sungPhrase(sr, 6, std::pow(10.0, -18.0 / 20), 196);
+        auto a = p0; a.mix = 0.f; auto b = a; b.levelMatch = false;
+        auto c = p0; c.choirOn = false; auto d = c; d.levelMatch = false;
+        const auto ra = render(x, sr, a), rb = render(x, sr, b), rc = render(x, sr, c), rd = render(x, sr, d); double worst = 0;
+        for (size_t i = 0; i < x.size(); ++i) worst = std::max({ worst, (double) std::fabs(ra.l[i] - rb.l[i]), (double) std::fabs(rc.l[i] - rd.l[i]) });
+        CHECK(worst == 0.0, "AUTO LEVEL changed the sound at MIX 0 / choir off by %g", worst);
+        // the classic stage ignores it
+        auto e = p0; e.classicStage = true; auto f = e; f.levelMatch = false; const auto re = render(x, sr, e), rf = render(x, sr, f); worst = 0;
+        for (size_t i = 0; i < x.size(); ++i) worst = std::max(worst, (double) std::fabs(re.l[i] - rf.l[i]));
+        CHECK(worst == 0.0, "the classic stage changed with AUTO LEVEL by %g", worst);
+        std::printf("[5b] AUTO LEVEL is exactly neutral at MIX 0, with the choir off, and on the classic stage\n");
     }
 
     // 6. a hot vocal with everything turned up never passes full scale ---------------------------------------------

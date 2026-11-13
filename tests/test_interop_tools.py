@@ -22,6 +22,7 @@ def load(name, file):
 
 midi = load("satb_to_midi", "satb_to_midi.py")
 spatial = load("mix_external_voices", "mix_external_voices.py")
+skull = load("render_skull_preview", "render_skull_preview.py")
 
 
 class InteropTests(unittest.TestCase):
@@ -89,6 +90,36 @@ class InteropTests(unittest.TestCase):
                 {"file": "nonexistent.wav", "section": "soprano"}]}))
             with self.assertRaises(FileNotFoundError):
                 spatial.render(manifest, Path(temp) / "out.wav")
+
+
+class SkullPreviewTests(unittest.TestCase):
+    def test_header_parses_to_the_same_shapes_the_plugin_draws(self):
+        text = (ROOT / "Source" / "UI" / "SkullShape.h").read_text(encoding="utf-8")
+        listed = sum(1 for line in text.splitlines() if line.lstrip().startswith("{ Kind::"))   # not the examples in the comment
+        shapes = skull.parse_shapes()
+        self.assertEqual(listed, len(shapes), "a shape line in SkullShape.h is not in the format the preview script reads")
+        self.assertEqual({"Body", "Cut", "Glint"}, {s["role"] for s in shapes})
+
+    def test_every_theme_is_found_with_its_real_colours(self):
+        themes = dict(skull.parse_themes())
+        self.assertEqual(["Gold", "Blood Red", "Neon Green", "Ice Blue"], list(themes))
+        self.assertEqual(0xffe9bb68, themes["Gold"]["gold"])        # the shipped accent
+        self.assertEqual(0xff2f1b15, themes["Gold"]["headerTop"])   # the header glow, so the index into the palette is right
+        self.assertEqual(0xff08060a, themes["Gold"]["bg"])
+
+    def test_render_draws_a_skull(self):
+        try:
+            import PIL  # noqa: F401
+        except ImportError:
+            self.skipTest("Pillow is not installed")
+        colours = dict(skull.parse_themes())["Gold"]
+        img = skull.draw_skull(skull.parse_shapes(), 64, colours, supersample=2)
+        self.assertEqual((64, 64), img.size)
+        pixels = list(img.convert("RGB").getdata())
+        bright = sum(1 for r, g, b in pixels if r > 150 and g > 110)     # the golden body
+        self.assertTrue(0.25 * 64 * 64 < bright < 0.75 * 64 * 64, bright)
+        corner = img.convert("RGB").getpixel((0, 63))
+        self.assertTrue(max(corner) < 60, corner)                        # the dark background, not gold
 
 
 if __name__ == "__main__":

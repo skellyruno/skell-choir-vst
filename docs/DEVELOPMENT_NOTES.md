@@ -1,4 +1,4 @@
-# OmniChoir FX — engineering notes
+# SkellyChoir (formerly OmniChoir FX) — engineering notes
 
 The original web demo scripts were included in `Reference/` unchanged, along with extracted readable source maps. They form a **spatial playback pipeline for pre-rendered individual voices**, not a reusable vocal-analysis-to-choir model. The original source stems and singer libraries were not provided.
 
@@ -10,7 +10,7 @@ The spatial stage controls and mic models are simplified compared with the suppl
 
 Buffers are allocated during `prepare`, not the audio callback. Audio callback stage calculations, note tracking and FDN are allocation-free. The scan trigger and progress share atomics between the audio and GUI threads; persistent scan root/status is saved as extra attributes alongside the JUCE parameter state. Gain/mix controls are smoothed; grain pitch ratio is also smoothed. The pitch process has a **varying algorithmic group delay**, therefore delay-compensation reporting is not exact. Test the actual performance in real hosts before production release.
 
-**Current build identity:** `SkAu`, plugin code `OmF2`, product `OmniChoir FX`; different from the earlier MIDI synth's `OmC1`, so DAWs should not confuse the two formats. JUCE source must be fetched before compiling. Native tests at 44.1, 48 and 96 kHz are provided under `tests/fx_tests.cpp`. Neither JUCE VST3 compilation nor DAW load validation took place in this environment.
+**Current build identity:** `SkAu`, plugin code `OmF2`, product `SkellyChoir` (was `OmniChoir FX` up to v0.8.0; the codes below did NOT change, so old sessions still load); different from the earlier MIDI synth's `OmC1`, so DAWs should not confuse the two formats. JUCE source must be fetched before compiling. Native tests at 44.1, 48 and 96 kHz are provided under `tests/fx_tests.cpp`. Neither JUCE VST3 compilation nor DAW load validation took place in this environment.
 
 
 ## v0.6 update

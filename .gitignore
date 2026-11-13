@@ -1,0 +1,14 @@
+# build output
+build/
+build-*/
+b/
+*.o
+*.obj
+# python
+__pycache__/
+*.pyc
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

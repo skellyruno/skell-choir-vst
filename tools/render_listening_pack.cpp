@@ -171,7 +171,7 @@ int main(int argc, char** argv)
 
     // the README
     std::ofstream readme(out + "/README.txt");
-    readme << "OMNICHOIR FX LISTENING PACK\n===========================\n\nEvery file is the same vocal (8 seconds" << (argc >= 4 ? " from the first file; 08 to 10 use the second file" : "") << ") through a different setting of the plugin's engine,\n"
+    readme << "SKELLYCHOIR LISTENING PACK\n=========================\n\nEvery file is the same vocal (8 seconds" << (argc >= 4 ? " from the first file; 08 to 10 use the second file" : "") << ") through a different setting of the plugin's engine,\n"
               "rendered with the plugin's own defaults. Nothing is normalised, so levels are comparable. Levels below are the average level while you are singing.\n"
               "Listen on headphones first, then on speakers. Start with 00 and 01.\n\nFILES\n";
     for (const auto& r : rows) readme << "\n" << r.file << "   (" << std::fixed << std::setprecision(1) << r.rmsDb << " dBFS while singing, peak " << std::setprecision(2) << r.peak << ")\n    " << r.what << "\n    LISTEN FOR: " << r.listen << "\n";

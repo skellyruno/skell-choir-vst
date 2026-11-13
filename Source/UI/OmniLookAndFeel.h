@@ -2,15 +2,44 @@
 // The OmniChoir look: warm black and brass, gold glossy buttons, gold-arc knobs, colour-coded faders.
 // Header-only; every string in the UI must stay plain ASCII (juce::String asserts on non-ASCII char literals).
 #include <JuceHeader.h>
+#include "../Theme.h"
 #include <array>
 #include <cmath>
 
 namespace omni {
 
-inline const juce::Colour kBg(0xff08060a), kPanel(0xff17101a), kPanel2(0xff271c1e), kStroke(0xff5a4036), kTrack(0xff3a2a26);
-inline const juce::Colour kCream(0xfff0e2cc), kMuted(0xffa99485), kGold(0xffe9bb68), kGoldHi(0xfffadc9a), kGoldLo(0xffc98a35), kInk(0xff2a1a0c);
-inline const std::array<juce::Colour, 4> kSection { juce::Colour(0xffe58ba0), juce::Colour(0xfff1d27f), juce::Colour(0xff6fc7a8), juce::Colour(0xff7ea4e0) };
-inline const juce::Colour kLead(0xfff4eee0);
+// The colours in use. They start as the gold theme and change only through applyTheme(), on the message thread.
+// Components that set a colour once at construction (labels, slider fills) must be refreshed after a change: see the editor's refreshThemedColours().
+inline juce::Colour themed(uint32_t argb) { return juce::Colour((juce::uint32) argb); }
+inline juce::Colour kBg(themed(theme::get(0).p.bg)), kPanel(themed(theme::get(0).p.panel)), kPanel2(themed(theme::get(0).p.panel2)),
+                    kStroke(themed(theme::get(0).p.stroke)), kTrack(themed(theme::get(0).p.track));
+inline juce::Colour kCream(themed(theme::get(0).p.cream)), kMuted(themed(theme::get(0).p.muted)), kGold(themed(theme::get(0).p.gold)),
+                    kGoldHi(themed(theme::get(0).p.goldHi)), kGoldLo(themed(theme::get(0).p.goldLo)), kInk(themed(theme::get(0).p.ink));
+inline std::array<juce::Colour, 4> kSection { themed(theme::get(0).p.section[0]), themed(theme::get(0).p.section[1]), themed(theme::get(0).p.section[2]), themed(theme::get(0).p.section[3]) };
+inline juce::Colour kLead(themed(theme::get(0).p.lead));
+// the rest of the palette: what used to be literals in the look-and-feel and the editor
+inline juce::Colour kKnobHi(themed(theme::get(0).p.knobHi)), kKnobLo(themed(theme::get(0).p.knobLo)), kSlot(themed(theme::get(0).p.slot)),
+                    kThumb(themed(theme::get(0).p.thumb)), kThumbHot(themed(theme::get(0).p.thumbHot)), kThumbLo(themed(theme::get(0).p.thumbLo)),
+                    kComboHover(themed(theme::get(0).p.comboHover)), kListSel(themed(theme::get(0).p.listSel)), kRollBg(themed(theme::get(0).p.rollBg)),
+                    kHeaderTop(themed(theme::get(0).p.headerTop)), kVignette(themed(theme::get(0).p.vignette)), kLight(themed(theme::get(0).p.light)),
+                    kDust(themed(theme::get(0).p.dust)), kLeadFigure(themed(theme::get(0).p.leadFigure)), kMuteBadge(themed(theme::get(0).p.muteBadge)),
+                    kRecord(themed(theme::get(0).p.record)), kStageTint(themed(theme::get(0).p.stageTint));
+inline int gThemeIndex = 0;
+inline int themeIndex() { return gThemeIndex; }
+inline void applyTheme(int index)
+{
+    gThemeIndex = theme::clampIndex(index);
+    const auto& p = theme::get(gThemeIndex).p;
+    kBg = themed(p.bg); kPanel = themed(p.panel); kPanel2 = themed(p.panel2); kStroke = themed(p.stroke); kTrack = themed(p.track);
+    kCream = themed(p.cream); kMuted = themed(p.muted); kGold = themed(p.gold); kGoldHi = themed(p.goldHi); kGoldLo = themed(p.goldLo); kInk = themed(p.ink);
+    for (size_t i = 0; i < 4; ++i) kSection[i] = themed(p.section[i]);
+    kLead = themed(p.lead);
+    kKnobHi = themed(p.knobHi); kKnobLo = themed(p.knobLo); kSlot = themed(p.slot); kThumb = themed(p.thumb); kThumbHot = themed(p.thumbHot); kThumbLo = themed(p.thumbLo);
+    kComboHover = themed(p.comboHover); kListSel = themed(p.listSel); kRollBg = themed(p.rollBg); kHeaderTop = themed(p.headerTop); kVignette = themed(p.vignette);
+    kLight = themed(p.light); kDust = themed(p.dust); kLeadFigure = themed(p.leadFigure); kMuteBadge = themed(p.muteBadge); kRecord = themed(p.record); kStageTint = themed(p.stageTint);
+}
+// the accent of the faders: 0..3 the sections, 4 the lead
+inline juce::Colour faderAccent(int which) { return which >= 0 && which < 4 ? kSection[(size_t) which] : kLead; }
 
 inline juce::Font boldFont(float height) { return juce::Font(juce::FontOptions(height).withStyle("Bold")); }
 inline juce::Font plainFont(float height) { return juce::Font(juce::FontOptions(height)); }
@@ -31,7 +60,10 @@ inline void fillGold(juce::Graphics& g, juce::Rectangle<float> r, float radius, 
 class OmniLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    OmniLookAndFeel()
+    OmniLookAndFeel() { refreshColours(); }
+
+    // (re)reads the palette: called at construction and after every theme change
+    void refreshColours()
     {
         setColour(juce::PopupMenu::backgroundColourId, kPanel);
         setColour(juce::PopupMenu::textColourId, kCream);
@@ -74,7 +106,7 @@ public:
             g.setColour(accent); g.strokePath(lit, stroke(4.f));
         }
         const float br = r - 9.f;
-        g.setGradientFill(juce::ColourGradient(juce::Colour(0xff55413a), c.x - br * .5f, c.y - br * .8f, juce::Colour(0xff130d10), c.x + br * .4f, c.y + br, false));
+        g.setGradientFill(juce::ColourGradient(kKnobHi, c.x - br * .5f, c.y - br * .8f, kKnobLo, c.x + br * .4f, c.y + br, false));
         g.fillEllipse(c.x - br, c.y - br, br * 2.f, br * 2.f);
         g.setColour(juce::Colours::black.withAlpha(.55f)); g.drawEllipse(c.x - br, c.y - br, br * 2.f, br * 2.f, 1.4f);
         g.setColour(accent.withAlpha(hot ? .55f : .30f)); g.drawEllipse(c.x - br + 1.5f, c.y - br + 1.5f, br * 2.f - 3.f, br * 2.f - 3.f, 1.f);
@@ -93,7 +125,7 @@ public:
         const auto accent = s.findColour(juce::Slider::trackColourId);
         const float cx = (float) x + (float) w * .5f, top = (float) y + 8.f, bottom = (float) (y + h) - 8.f;
         const juce::Rectangle<float> slot(cx - 3.f, top, 6.f, juce::jmax(1.f, bottom - top));
-        g.setColour(juce::Colour(0xff0c0709)); g.fillRoundedRectangle(slot.expanded(1.f, 0.f), 4.f);
+        g.setColour(kSlot); g.fillRoundedRectangle(slot.expanded(1.f, 0.f), 4.f);
         g.setColour(kStroke.withAlpha(.6f)); g.drawRoundedRectangle(slot.expanded(1.f, 0.f), 4.f, 1.f);
         for (int i = 0; i <= 4; ++i)                                                      // scale ticks
         {
@@ -110,8 +142,8 @@ public:
         const juce::Rectangle<float> thumb(cx - 15.f, sliderPos - 7.f, 30.f, 14.f);
         const bool hot = s.isMouseOverOrDragging();
         g.setColour(juce::Colours::black.withAlpha(.5f)); g.fillRoundedRectangle(thumb.translated(0.f, 1.5f), 5.f);
-        g.setGradientFill(juce::ColourGradient(hot ? juce::Colour(0xff8a7068) : juce::Colour(0xff6b564e), thumb.getX(), thumb.getY(),
-                                               juce::Colour(0xff2a1d1c), thumb.getX(), thumb.getBottom(), false));
+        g.setGradientFill(juce::ColourGradient(hot ? kThumbHot : kThumb, thumb.getX(), thumb.getY(),
+                                               kThumbLo, thumb.getX(), thumb.getBottom(), false));
         g.fillRoundedRectangle(thumb, 5.f);
         g.setColour(accent); g.drawRoundedRectangle(thumb.reduced(.5f), 5.f, 1.1f);
         g.setColour(kCream); g.drawLine(thumb.getX() + 7.f, thumb.getCentreY(), thumb.getRight() - 7.f, thumb.getCentreY(), 1.6f);
@@ -136,7 +168,7 @@ public:
         else
         {
             g.setColour(juce::Colours::black.withAlpha(.35f)); g.fillRoundedRectangle(r.translated(0.f, 1.5f), radius);
-            g.setGradientFill(juce::ColourGradient(over ? juce::Colour(0xff3a2a2a) : kPanel2, r.getX(), r.getY(), kPanel, r.getX(), r.getBottom(), false));
+            g.setGradientFill(juce::ColourGradient(over ? kComboHover : kPanel2, r.getX(), r.getY(), kPanel, r.getX(), r.getBottom(), false));
             g.fillRoundedRectangle(r, radius);
             g.setColour((id == "tab" ? kStroke : kGold).withAlpha(enabled ? (over ? .85f : .5f) : .2f));
             g.drawRoundedRectangle(r.reduced(.5f), radius, 1.1f);

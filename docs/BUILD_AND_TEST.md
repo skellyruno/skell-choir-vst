@@ -1,4 +1,4 @@
-# Build and verify OmniChoir FX (v0.6.1)
+# Build and verify SkellyChoir (v0.9.0; formerly OmniChoir FX)
 
 ## 1. The engine tests, with nothing installed but a C++17 compiler
 

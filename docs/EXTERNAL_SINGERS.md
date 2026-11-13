@@ -1,10 +1,10 @@
-# OmniChoir FX — external singer integration (experimental offline workflow)
+# SkellyChoir — external singer integration (experimental offline workflow)
 
 The plugin's live effect currently makes **16 DSP-derived layers from the same incoming vocal**. An external model that renders a *different person's voice* is the missing ingredient for convincingly independent singers. The provided `ai-choir-master.zip` is one possible **offline** renderer. This workflow does not pretend to load it directly in a VST3 audio callback.
 
 ## From Full Scan to independently rendered voices
 
-1. In OmniChoir `SCAN / EDIT`, import a clean monophonic vocal and adjust the detected soprano, alto, tenor and bass notes. Render WAV to save the SATB CSV, or scan with `omnichoir-batch`.
+1. In SkellyChoir `LISTEN` / `TAKE`, import a clean monophonic vocal and adjust the detected soprano, alto, tenor and bass notes. Render WAV to save the SATB CSV, or scan with `omnichoir-batch`.
 2. Export the editable score to standard MIDI with four SATB tracks plus an optional guide lead:
 
    ```bash
