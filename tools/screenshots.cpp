@@ -64,6 +64,8 @@ int main(int argc, char** argv)
     savePng(*editor,folder,"03-alternate-theme");
     editor->showThemeForScreenshot(0);
     processor.applyStagePreset(8); // Graveyard
+    // Start the scene fade in a real paint before waiting for its completion.
+    (void) editor->createComponentSnapshot(editor->getLocalBounds(), true, 1.0f);
     juce::Thread::sleep(450); // allow the new scene's 400 ms visual crossfade
     savePng(*editor,folder,"04-graveyard-scene");
     return 0;
