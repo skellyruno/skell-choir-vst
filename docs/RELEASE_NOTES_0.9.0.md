@@ -28,4 +28,4 @@ unchanged from 0.8: every new sound feature is off by default, and the default s
 ## Known limitations
 - Latency is not fixed: the pitch shifter has a variable 10-90 ms delay, so the host's delay compensation is approximate.
 - STEADY NOTES helps only on steady notes (see above).
-- This release has been built and tested natively; the plugin itself is checked by the project's CI (build, pluginval, screenshots) on Windows, macOS and Linux.
+- Native DSP tests and a Windows VST3 build are checked by the repository's GitHub Actions. A release remains pending until the RC2 branch passes its exact-commit build and UI checks, plus real FL Studio and audio validation; macOS and Linux VST3 deliverables are not part of the current release workflow.
