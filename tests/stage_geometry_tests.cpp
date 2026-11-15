@@ -121,6 +121,29 @@ int main(int argc, char** argv)
         const auto farLow = G::leadInRoom({ -15.f, -15.f }, 0.f, 0.4f); CHECK(near(farLow.x, -10.f) && near(farLow.y, -9.6f), "leadInRoom low clamp: %.2f,%.2f", farLow.x, farLow.y);
         std::printf("[5] clamps; the far right is reachable; the view's mic range sits inside the engine's\n");
     }
+    // 6. the mic cannot be dragged onto the solo/mute strip, at any window size the editor allows (plot height 258 at 800x540 ... 1050 high) -----
+    {
+        // the ring constant must cover the ring the editor really draws: drawEllipse(mic.x-19.f, mic.y-17.f, 38.f, 34.f, ...)
+        const std::string editor = ts::readFile(root + "/Source/PluginEditor.cpp");
+        CHECK(editor.find("g.drawEllipse(mic.x-19.f,mic.y-17.f,38.f,34.f") != std::string::npos, "the mic ring in PluginEditor.cpp changed: update kMicRingPx in StageGeometry.h and this check");
+        CHECK(G::kMicRingPx >= 19.f, "kMicRingPx %.1f is smaller than the drawn ring's half-width 19", G::kMicRingPx);
+        long sizes = 0;
+        for (float plotH = 258.f; plotH <= 900.f; plotH += 7.f)
+        {
+            const float floorY = G::micFloorInView(plotH);
+            CHECK(floorY >= G::kMicYMin && floorY <= 0.f, "plot %.0f: floor %.2f outside kMicYMin..0 (the default spot must stay reachable)", plotH, floorY);
+            // the view's own mapping: the mic centre is  28 + (y + 1.1) / 14 * (h - 52)  pixels above the plot bottom; the ring reaches 19 px below that
+            const float ringBottomAbovePlotBottom = G::kViewFloorPx + (floorY - G::kViewFloorY) / G::kViewSpan * (plotH - G::kViewInsetPx) - G::kMicRingPx;
+            const bool defaultFits = G::micFloorInView(plotH) == 0.f;   // only the smallest windows cannot clear the strip with the default spot
+            if (!defaultFits) CHECK(ringBottomAbovePlotBottom >= G::kViewStripPx - 0.01f, "plot %.0f: the mic ring (%.1f px up) reaches the strip (%.0f px)", plotH, ringBottomAbovePlotBottom, G::kViewStripPx);
+            else CHECK(ringBottomAbovePlotBottom >= G::kViewStripPx - 3.f, "plot %.0f: even at the floor of 0 the ring overlaps the strip by %.1f px", plotH, G::kViewStripPx - ringBottomAbovePlotBottom);
+            const auto c = G::clampMicInView({ -99.f, -99.f }, plotH); CHECK(c.x == -G::kMicXMax && c.y == floorY, "clampMicInView low corner");
+            const auto up = G::clampMicInView({ 99.f, 99.f }, plotH); CHECK(up.x == G::kMicXMax && up.y == G::kMicYMax, "clampMicInView high corner");
+            const auto ok = G::clampMicInView({ 3.f, 5.f }, plotH); CHECK(ok.x == 3.f && ok.y == 5.f, "a spot above the floor must not move");
+            ++sizes;
+        }
+        std::printf("[6] mic floor in the view: %ld window sizes, the mic ring stays off the strip (default spot always reachable)\n", sizes);
+    }
     std::printf("stage geometry: all checks passed (%ld mic/lead pairs)\n", pairs);
     return 0;
 }

@@ -25,7 +25,7 @@ int main(int argc, char** argv)
         CHECK(declares(src, id), "parameter '%s' is not declared in PluginProcessor.cpp", id);
         CHECK(body.find(std::string("\"") + id + "\"") != std::string::npos, "applyStyleValues() never sets '%s'", id);
     }
-    for (const char* never : { "leadGain", "master", "choirLevel", "levelMatch", "\"mode\"", "sectionState" })
+    for (const char* never : { "leadGain", "master", "choirLevel", "levelMatch", "grainLock", "\"mode\"", "sectionState" })
         CHECK(body.find(never) == std::string::npos, "a style must not set %s", never);
     std::printf("[1] every style parameter is declared and set by the processor, and a style never sets lead level, output, AUTO LEVEL, CHOIR LEVEL, mode or solo/mute\n");
 

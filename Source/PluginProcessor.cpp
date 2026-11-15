@@ -47,7 +47,7 @@ OmniChoirAudioProcessor::OmniChoirAudioProcessor()
     raw.hall=get("hall");raw.hallSeconds=get("hallSeconds");
     raw.voiceBlend=get("voiceBlend");raw.choirVowel=get("choirVowel");raw.vowelFollow=get("vowelFollow");
     raw.choirBreath=get("choirBreath");raw.vibrato=get("vibrato");raw.classicStage=get("classicStage");
-    raw.choirLevel=get("choirLevel");raw.levelMatch=get("levelMatch");raw.choirSize=get("choirSize");
+    raw.choirLevel=get("choirLevel");raw.levelMatch=get("levelMatch");raw.grainLock=get("grainLock");raw.choirSize=get("choirSize");
     raw.consonants=get("consonants");raw.swell=get("swell");raw.keyRoot=get("keyRoot");raw.scale=get("scale");raw.pulseRate=get("pulseRate");raw.pulseDepth=get("pulseDepth");
     for(int i=0;i<5;++i) raw.sectionState[(size_t)i]=get("sectionState"+juce::String(i));
 #ifdef SKELLYCHOIR_WITH_SKELLCORE
@@ -151,6 +151,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout OmniChoirAudioProcessor::cre
     addFloat(layout,"master","Output",0.f,1.5f,.001f,1.f);   // v0.7: default 1.0 (AUTO LEVEL now does the loudness work). New instances only; saved sessions keep their value. The range is unchanged so host automation keeps its meaning.
     addFloat(layout,"choirLevel","Choir Level",-12.f,12.f,.1f,0.f,"dB");
     layout.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"levelMatch",1},"Auto Level",true));   // v0.7
+    layout.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"grainLock",1},"Steady Notes",false));   // v0.9, opt-in: off is the original sound. A session without it loads with it off.
     addFloat(layout,"choirSize","Choir Size",0.f,1.f,.001f,.5f);                                                   // v0.7 macro, 0.5 = neutral
     for(int i=0;i<5;++i)                                                                                           // v0.7 solo / mute; v1: 4 is the lead
         layout.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"sectionState"+juce::String(i),1},
@@ -201,7 +202,7 @@ choir::FXParams OmniChoirAudioProcessor::readParams() const {
     p.hall=read(raw.hall);p.hallSeconds=read(raw.hallSeconds);
     p.voiceBlend=read(raw.voiceBlend);p.choirVowel=read(raw.choirVowel);p.vowelFollow=read(raw.vowelFollow);
     p.choirBreath=read(raw.choirBreath);p.vibrato=read(raw.vibrato);p.classicStage=read(raw.classicStage)>.5f;
-    p.choirLevelDb=read(raw.choirLevel);p.levelMatch=read(raw.levelMatch)>.5f;
+    p.choirLevelDb=read(raw.choirLevel);p.levelMatch=read(raw.levelMatch)>.5f;p.lockGrains=read(raw.grainLock)>.5f;
     p.keyRoot=(int)read(raw.keyRoot);p.scale=(int)read(raw.scale);p.consonants=read(raw.consonants);
 #ifdef SKELLYCHOIR_WITH_SKELLCORE
     if (followWorldKey_.load(std::memory_order_relaxed)) {
@@ -381,23 +382,17 @@ void OmniChoirAudioProcessor::setParameterValue(const juce::String& id,float val
         parameter->endChangeGesture();
     }
 }
-void OmniChoirAudioProcessor::applyStagePreset(int index) {
+void OmniChoirAudioProcessor::applyRoom(int index) {
     if(index<0 || index>=choir::kNumStagePresets) return;
     scene.store(scenes::clampScene(index));   // the picture behind the singers follows the room
     const auto& s=choir::kStagePresets[index];
     const auto set=[this](const juce::String& id,float value) {setParameterValue(id,value);};
-    for(int i=0;i<4;++i) {
-        const auto k=juce::String(i);
-        set("x"+k,s.x[i]);set("y"+k,s.y[i]);set("gain"+k,s.gain[i]);
-    }
-    set("micX",s.micX);set("micY",s.micY);set("width",s.width);set("micMode",(float)s.micMode);
+    // the space only. Nobody moves: not the four sections, not the lead, not the microphone (and not the mic array, the singers' tuning or timing).
     set("roomSize",s.roomSize);set("roomSeconds",s.roomSeconds);set("absorption",s.absorption);
     set("diffusion",s.diffusion);set("wet",s.wet);set("hall",s.hall);set("hallSeconds",s.hallSeconds);
-    set("ensemble",s.ensemble);set("humanize",s.humanize);
-    // the lead keeps standing where the user put it relative to the new microphone position
 }
 void OmniChoirAudioProcessor::applyStyleValues(const choir::StylePreset& s) {
-    applyStagePreset(s.stage);   // where they stand and the room
+    applyRoom(s.stage);   // the room (never where anyone stands)
     const auto set=[this](const juce::String& id,float value) {setParameterValue(id,value);};
     set("harmony",(float)s.harmony);set("mix",s.mix);set("choirSize",s.size);
     set("ensemble",s.ensemble);set("humanize",s.humanize);set("formant",s.formant);
@@ -447,7 +442,7 @@ bool OmniChoirAudioProcessor::loadStyleFile(const juce::File& file) {
     if(!file.existsAsFile() || file.getSize()>64*1024) return false;   // a style file is a couple of kilobytes: refuse anything silly
     choir::StyleFileData data;
     if(!choir::parseStyleFile(file.loadFileAsString().toStdString(),data) || data.values.empty()) return false;
-    for(const auto& value:data.values) setParameterValue(juce::String(value.first),value.second);
+    for(const auto& value:data.values) if(!choir::isPlacementId(value.first)) setParameterValue(juce::String(value.first),value.second);   // loading a style never moves anyone
     if(data.scene>=0) scene.store(scenes::clampScene(data.scene));
     return true;
 }

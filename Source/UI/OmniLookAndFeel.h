@@ -23,7 +23,7 @@ inline juce::Colour kKnobHi(themed(theme::get(0).p.knobHi)), kKnobLo(themed(them
                     kComboHover(themed(theme::get(0).p.comboHover)), kListSel(themed(theme::get(0).p.listSel)), kRollBg(themed(theme::get(0).p.rollBg)),
                     kHeaderTop(themed(theme::get(0).p.headerTop)), kVignette(themed(theme::get(0).p.vignette)), kLight(themed(theme::get(0).p.light)),
                     kDust(themed(theme::get(0).p.dust)), kLeadFigure(themed(theme::get(0).p.leadFigure)), kMuteBadge(themed(theme::get(0).p.muteBadge)),
-                    kRecord(themed(theme::get(0).p.record)), kStageTint(themed(theme::get(0).p.stageTint));
+                    kRecord(themed(theme::get(0).p.record)), kStageTint(themed(theme::get(0).p.stageTint)), kVelvet(themed(theme::get(0).p.velvet));
 inline int gThemeIndex = 0;
 inline int themeIndex() { return gThemeIndex; }
 inline void applyTheme(int index)
@@ -36,7 +36,7 @@ inline void applyTheme(int index)
     kLead = themed(p.lead);
     kKnobHi = themed(p.knobHi); kKnobLo = themed(p.knobLo); kSlot = themed(p.slot); kThumb = themed(p.thumb); kThumbHot = themed(p.thumbHot); kThumbLo = themed(p.thumbLo);
     kComboHover = themed(p.comboHover); kListSel = themed(p.listSel); kRollBg = themed(p.rollBg); kHeaderTop = themed(p.headerTop); kVignette = themed(p.vignette);
-    kLight = themed(p.light); kDust = themed(p.dust); kLeadFigure = themed(p.leadFigure); kMuteBadge = themed(p.muteBadge); kRecord = themed(p.record); kStageTint = themed(p.stageTint);
+    kLight = themed(p.light); kDust = themed(p.dust); kLeadFigure = themed(p.leadFigure); kMuteBadge = themed(p.muteBadge); kRecord = themed(p.record); kStageTint = themed(p.stageTint); kVelvet = themed(p.velvet);
 }
 // the accent of the faders: 0..3 the sections, 4 the lead
 inline juce::Colour faderAccent(int which) { return which >= 0 && which < 4 ? kSection[(size_t) which] : kLead; }

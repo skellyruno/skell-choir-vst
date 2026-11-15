@@ -45,15 +45,30 @@ inline constexpr StagePreset kStagePresets[] = {
     { "Stadium Anthem", "A vast open space: a very wide choir, far back, long late reflections.",
       { -8.4f, -2.8f, 2.8f, 8.4f }, { 10.5f, 9.5f, 9.5f, 10.5f }, { .92f, .9f, .9f, .92f },
       0.f, -3.5f, 2.0f, 4, 1.f, 3.9f, .3f, .5f, .5f, .3f, 3.6f, .75f, .85f },
-    { "Headphone Choir", "A binaural head in the middle of the choir: close, enveloping, minimal room.",
-      { -3.8f, -1.3f, 1.3f, 3.8f }, { 2.4f, 1.8f, 1.8f, 2.4f }, { .8f, .8f, .8f, .8f },
-      0.f, 0.f, .4f, 5, .3f, 1.2f, .5f, .75f, .28f, .05f, 1.5f, .6f, .8f },
+    { "Opera House", "A horseshoe opera house: velvet and gilt, a warm 3.4 s bloom and a little hall under it.",
+      { -5.2f, -1.8f, 1.8f, 5.2f }, { 7.2f, 6.4f, 6.4f, 7.2f }, { .86f, .84f, .84f, .86f },
+      0.f, -.4f, .8f, 1, .8f, 3.4f, .65f, .9f, .30f, .2f, 3.5f, .6f, .8f },
     { "Graveyard", "Open night air: the choir stands among the stones, thin and far, a short airy tail with no hall at all.",
       { -6.8f, -2.4f, 2.4f, 6.8f }, { 8.6f, 7.6f, 7.6f, 8.6f }, { .82f, .8f, .8f, .82f },
       0.f, -1.5f, 1.8f, 0, .9f, .9f, .85f, .15f, .16f, 0.f, 2.4f, .45f, .9f },
     { "Crypt", "A low stone vault: close, dark and dense, a heavy ring that hangs on every note, the hall swallowing the choir.",
       { -2.6f, -.9f, .9f, 2.6f }, { 3.8f, 3.2f, 3.2f, 3.8f }, { .88f, .86f, .86f, .88f },
       0.f, .6f, .35f, 2, .22f, 3.6f, .08f, .95f, .55f, .3f, 3.2f, .7f, .7f },
+    { "Cave", "A limestone cavern: vast, cold and wet, a heavy, wet tail with hard edges that never quite smooths out.",
+      { -5.6f, -2.0f, 2.0f, 5.6f }, { 8.4f, 7.4f, 7.4f, 8.4f }, { .84f, .82f, .82f, .84f },
+      0.f, -1.2f, 1.1f, 0, .9f, 3.0f, .10f, .35f, .6f, .5f, 4.4f, .65f, .8f },
+    { "Bathroom", "A tiled bathroom: tiny, bright and hard, a quick shimmering ring that flatters every voice.",
+      { -1.9f, -.65f, .65f, 1.9f }, { 2.8f, 2.4f, 2.4f, 2.8f }, { .8f, .8f, .8f, .8f },
+      0.f, .5f, .3f, 2, .10f, 1.1f, .02f, .30f, .35f, 0.f, 2.4f, .45f, .7f },
+    { "Parking Garage", "A concrete car park: low, wide and hard, a long, thin, metallic flutter between the pillars.",
+      { -6.0f, -2.1f, 2.1f, 6.0f }, { 7.0f, 6.2f, 6.2f, 7.0f }, { .84f, .82f, .82f, .84f },
+      0.f, -.3f, 1.2f, 4, .7f, 4.2f, .03f, .15f, .12f, 0.f, 2.4f, .6f, .85f },
+    { "Marble Dome", "A great marble dome: the longest, smoothest bloom of all, bright and endless.",
+      { -4.4f, -1.5f, 1.5f, 4.4f }, { 7.8f, 7.0f, 7.0f, 7.8f }, { .88f, .86f, .86f, .88f },
+      0.f, -.8f, .9f, 1, .95f, 8.0f, .05f, .80f, .50f, .30f, 7.0f, .6f, .8f },
+    { "Stairwell", "A concrete stairwell: small but hard, a long, buzzing, metallic ring.",
+      { -2.4f, -.8f, .8f, 2.4f }, { 3.6f, 3.0f, 3.0f, 3.6f }, { .84f, .82f, .82f, .84f },
+      0.f, .4f, .4f, 2, .3f, 2.2f, .03f, .2f, .62f, 0.f, 2.4f, .5f, .8f },
 };
 inline constexpr int kNumStagePresets = (int) (sizeof(kStagePresets) / sizeof(kStagePresets[0]));
 
@@ -64,6 +79,15 @@ inline void applyStagePreset(const StagePreset& s, FXParams& p)
     p.micX = s.micX; p.micY = s.micY; p.width = s.width; p.micMode = s.micMode;
     p.roomSize = s.roomSize; p.roomSeconds = s.roomSeconds; p.absorption = s.absorption; p.diffusion = s.diffusion; p.wet = s.wet;
     p.hall = s.hall; p.hallSeconds = s.hallSeconds; p.ensemble = s.ensemble; p.humanize = s.humanize;
+}
+
+// What the UI uses: the ROOM of a preset (the space and its tail) and nothing else. It never moves a singer, the lead or the microphone, never
+// changes the mic array or spacing, and never touches how the singers sing. (applyStagePreset above also applies the placement: tests and
+// the engine-level presets still use it; the plugin's UI does not.)
+inline void applyRoomOnly(const StagePreset& s, FXParams& p)
+{
+    p.roomSize = s.roomSize; p.roomSeconds = s.roomSeconds; p.absorption = s.absorption; p.diffusion = s.diffusion; p.wet = s.wet;
+    p.hall = s.hall; p.hallSeconds = s.hallSeconds;
 }
 
 } // namespace choir

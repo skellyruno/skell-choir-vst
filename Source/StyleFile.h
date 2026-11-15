@@ -27,6 +27,13 @@ inline bool isUserStyleId(const std::string& id)
     return false;
 }
 
+// Loading a style file never moves anyone: the singers' and the mic's positions are skipped (a file saved before this rule still holds them, harmlessly).
+inline bool isPlacementId(const std::string& id)
+{
+    if (id == "micX" || id == "micY") return true;
+    return id.size() == 2 && (id[0] == 'x' || id[0] == 'y') && id[1] >= '0' && id[1] <= '3';
+}
+
 struct StyleFileData
 {
     std::string name;

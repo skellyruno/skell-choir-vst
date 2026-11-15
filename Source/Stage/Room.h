@@ -77,19 +77,27 @@ public:
             lineLen[i] = n;
             if (snapLengths) lenNow[i] = n;
             feedback[i] = std::pow(10.0, -3.0 * n / sr / rt60);
+            if (snapLengths) feedbackNow[i] = feedback[i];
         }
         double cutoff = lerp(12000, 1800, clampv(s.absorption, 0.0, 1.0));
         dampCoef = 1 - std::exp(-kTwoPi * std::min(cutoff, sr * 0.45) / sr);
-        double gAp = 0.25 + 0.5 * clampv(s.diffusion, 0.0, 1.0);
-        for (auto& a : ap) a.g = gAp;
+        apTarget = 0.25 + 0.5 * clampv(s.diffusion, 0.0, 1.0);
+        if (snapLengths) { dampNow = dampCoef; for (auto& a : ap) a.g = apTarget; }
     }
 
     void process(const float* inL, const float* inR, float* mainL, float* mainR, float* roomL, float* roomR, int n)
     {
         snapLengths = false;
+        const double coefStep = kCoefSlewPerSecond / sr;
         double o[8], m[8];
         for (int s = 0; s < n; ++s)
         {
+            // a new room: the feedback gains, the damping and the allpass gain glide to their new values (kCoefSlew per second) instead of
+            // jumping, because a step in the feedback is a step in everything that is recirculating. At rest each equals its target exactly.
+            if (dampNow != dampCoef) dampNow = std::fabs(dampCoef - dampNow) <= coefStep ? dampCoef : dampNow + (dampCoef > dampNow ? coefStep : -coefStep);
+            if (ap[0].g != apTarget) { const double g = std::fabs(apTarget - ap[0].g) <= coefStep ? apTarget : ap[0].g + (apTarget > ap[0].g ? coefStep : -coefStep); for (auto& a : ap) a.g = g; }
+            for (int i = 0; i < 8; ++i)
+                if (feedbackNow[i] != feedback[i]) feedbackNow[i] = std::fabs(feedback[i] - feedbackNow[i]) <= coefStep ? feedback[i] : feedbackNow[i] + (feedback[i] > feedbackNow[i] ? coefStep : -coefStep);
             double xl = allpass(ap[1], allpass(ap[0], inL[s]));
             double xr = allpass(ap[3], allpass(ap[2], inR[s]));
             lfoPhase += lfoInc; if (lfoPhase >= 1) lfoPhase -= 1;
@@ -110,7 +118,7 @@ public:
                 int i1 = i0 - 1; if (i1 < 0) i1 += maxLen;       // one sample older
                 const auto& li = line[i];
                 double v = li[(size_t) i0] + frac * (li[(size_t) i1] - li[(size_t) i0]);
-                dampState[i] += dampCoef * (v - dampState[i]);
+                dampState[i] += dampNow * (v - dampState[i]);
                 o[i] = dampState[i];
             }
             for (int i = 0; i < 8; ++i) m[i] = o[i];
@@ -121,7 +129,7 @@ public:
             for (int i = 0; i < 8; ++i)
             {
                 double inp = ((i & 1) ? xr : xl) * ((i & 2) ? -0.5 : 0.5);
-                line[i][(size_t) writePos[i]] = (float) (inp + m[i] * norm * feedback[i]);
+                line[i][(size_t) writePos[i]] = (float) (inp + m[i] * norm * feedbackNow[i]);
                 if (++writePos[i] >= maxLen) writePos[i] = 0;
             }
             mainL[s] = (float) (0.5 * (o[0] - o[2] + o[4] - o[6]));
@@ -145,10 +153,11 @@ private:
     double sr; int maxLen = 0;
     std::vector<float> line[8];
     static constexpr double kLengthSlew = 0.1;
+    static constexpr double kCoefSlewPerSecond = 10.0;   // feedback / damping / allpass gain: the whole 0..1 range in 0.1 s, so a typical change takes 5-20 ms
     int lineLen[8] {}, writePos[8] {};
     double lenNow[8] {};
     bool snapLengths = true;   // until the first audio after a reset: a new instance starts in its room, it does not glide to it
-    double feedback[8] {}, dampState[8] {}, dampCoef = 0.5;
+    double feedback[8] {}, feedbackNow[8] {}, dampState[8] {}, dampCoef = 0.5, dampNow = 0.5, apTarget = 0.5;
     AP ap[4];
     double lfoPhase = 0, lfoInc = 0;
 };

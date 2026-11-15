@@ -127,7 +127,7 @@ class TooltipClient { public: virtual ~TooltipClient() = default; };
 class SettableTooltipClient : public TooltipClient { public: void setTooltip(const String&) {} };
 class Component {
 public:
-    virtual ~Component() = default;
+    virtual ~Component() = default; Rectangle<int> localAreaToGlobal(Rectangle<int> r) const { return r; }
     virtual void paint(Graphics&) {} virtual void resized() {}
     virtual void mouseWheelMove(const MouseEvent&, const MouseWheelDetails&) {}
     virtual void mouseDown(const MouseEvent&) {} virtual void mouseDrag(const MouseEvent&) {} virtual void mouseUp(const MouseEvent&) {}
@@ -171,8 +171,8 @@ class ListBoxModel { public: virtual ~ListBoxModel() = default; virtual int getN
 class ListBox : public Component { public: enum ColourIds { backgroundColourId = 1, outlineColourId, textColourId }; ListBox(const String& = {}, ListBoxModel* = nullptr) {}
     void setRowHeight(int) {} void updateContent() {} int getSelectedRow(int = 0) const { return 0; } };
 class PopupMenu { public: enum ColourIds { backgroundColourId = 1, textColourId, headerTextColourId, highlightedBackgroundColourId, highlightedTextColourId };
-    class Options { public: Options withTargetComponent(Component*) const { return *this; } Options withTargetComponent(Component&) const { return *this; } };
-    void addItem(int, const String&, bool = true, bool = false) {} void showMenuAsync(const Options&, std::function<void(int)>) {} };
+    class Options { public: Options withTargetScreenArea(Rectangle<int>) const { return *this; } Options withMinimumWidth(int) const { return *this; } Options withTargetComponent(Component*) const { return *this; } Options withTargetComponent(Component&) const { return *this; } };
+    void addItem(int, const String&, bool = true, bool = false) {} void addSeparator() {} void addSectionHeader(const String&) {} void showMenuAsync(const Options&, std::function<void(int)>) {} };
 class GlyphArrangement { public: void addLineOfText(const Font&, const String&, float, float) {} Rectangle<float> getBoundingBox(int, int, bool) const { return {}; } };
 class FileBrowserComponent { public: enum FileChooserFlags { openMode = 1, saveMode = 2, canSelectFiles = 4, canSelectDirectories = 8, warnAboutOverwriting = 64 }; };
 class FileChooser { public: FileChooser(const String&, const File& = {}, const String& = {}) {} void launchAsync(int, std::function<void(const FileChooser&)>) {} File getResult() const { return {}; } };

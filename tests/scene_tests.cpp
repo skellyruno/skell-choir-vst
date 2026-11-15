@@ -29,8 +29,8 @@ int main(int argc, char** argv)
     for (int i = 0; i < scenes::kNumScenes; ++i) CHECK(std::string(scenes::kScenes[i].presetName) == choir::kStagePresets[i].name, "scene %d is '%s' but stage preset %d is '%s'", i, scenes::kScenes[i].presetName, i, choir::kStagePresets[i].name);
     CHECK(scenes::samePicture(0, 1) && !scenes::samePicture(1, 2) && !scenes::samePicture(2, 3), "Default and Cathedral keep the existing photo; every other scene has its own");
     std::set<std::string> files; for (const auto& s : scenes::kScenes) files.insert(s.file);
-    CHECK(files.size() == 9, "expected 9 distinct pictures, found %zu", files.size());
-    CHECK(scenes::clampScene(-1) == 0 && scenes::clampScene(10) == 0 && scenes::clampScene(9) == 9, "clampScene");
+    CHECK((int) files.size() == scenes::kNumScenes - 1, "expected %d distinct pictures (every scene has its own, except Default which shares the original photo), found %zu", scenes::kNumScenes - 1, files.size());
+    CHECK(scenes::clampScene(-1) == 0 && scenes::clampScene(scenes::kNumScenes) == 0 && scenes::clampScene(scenes::kNumScenes - 1) == scenes::kNumScenes - 1, "clampScene");
 
     // 2. the crossfade: 0 -> 1 over 400 ms, monotonic, flat at both ends
     CHECK(scenes::kFadeMs == 400 && scenes::fadeProgress(-5) == 0.f && scenes::fadeProgress(0) == 0.f && scenes::fadeProgress(400) == 1.f && scenes::fadeProgress(1e6) == 1.f, "fade end points");
@@ -59,20 +59,20 @@ int main(int argc, char** argv)
 
     // 4. the editor and the processor use the scene machinery
     const std::string editor = ts::readFile(root + "/Source/PluginEditor.cpp"), proc = ts::readFile(root + "/Source/PluginProcessor.cpp");
-    for (const auto& s : scenes::kScenes) { std::string n = s.file; n = n.substr(n.rfind('/') + 1); for (auto& c : n) if (c == '.') c = '_'; CHECK(editor.find("BinaryData::" + n + ";") != std::string::npos && editor.find("BinaryData::" + n + "Size;") != std::string::npos, "the editor does not load %s", n.c_str()); }
+    for (const auto& s : scenes::kScenes) { std::string n = s.file; n = n.substr(n.rfind('/') + 1); for (auto& c : n) if (c == '.') c = '_'; CHECK(editor.find("OMNI_PIC(" + n + ")") != std::string::npos, "the editor does not load %s", n.c_str()); }
     CHECK(proc.find("setAttribute(\"omniScene\",scene.load())") != std::string::npos && proc.find("getIntAttribute(\"omniScene\",0)") != std::string::npos, "the scene is not both saved to and restored from the processor state");
-    CHECK(proc.find("scene.store(scenes::clampScene(index))") != std::string::npos && proc.find("values,scene.load()") != std::string::npos && proc.find("data.scene>=0") != std::string::npos, "applyStagePreset / saveStyleFile / loadStyleFile do not handle the scene");
+    CHECK(proc.find("scene.store(scenes::clampScene(index))") != std::string::npos && proc.find("values,scene.load()") != std::string::npos && proc.find("data.scene>=0") != std::string::npos, "applyRoom / saveStyleFile / loadStyleFile do not handle the scene");
 
     // 5. the scene in a style file
     {
         const auto text = choir::writeStyleFile("Hall", { { "mix", .5f } }, 4); choir::StyleFileData d;
         CHECK(choir::parseStyleFile(text, d) && d.scene == 4 && d.values.size() == 1, "scene= did not survive a style file round trip");
         CHECK(choir::parseStyleFile(choir::writeStyleFile("Old", { { "mix", .5f } }), d) && d.scene == -1 && text.find("scene=4") != std::string::npos, "a style with no scene must say none");
-        for (const char* bad : { "scene=10", "scene=99", "scene=-3", "scene=abc", "scene=", "scene=2.5x" })
-            CHECK(choir::parseStyleFile(std::string("OmniChoirStyle 1\nname=x\n") + bad + "\nmix=.4\n", d) && d.scene == -1 && d.values.size() == 1, "'%s' must be ignored", bad);
+        for (const std::string& bad : std::vector<std::string> { "scene=" + std::to_string(scenes::kNumScenes), "scene=99", "scene=-3", "scene=abc", "scene=", "scene=2.5x" })
+            CHECK(choir::parseStyleFile(std::string("OmniChoirStyle 1\nname=x\n") + bad + "\nmix=.4\n", d) && d.scene == -1 && d.values.size() == 1, "'%s' must be ignored", bad.c_str());
         CHECK(choir::parseStyleFile("OmniChoirStyle 1\nscene=3\nscene=5\nmix=.4\n", d) && d.scene == 3, "a repeated scene= must keep the first");
         CHECK(choir::isUserStyleId("scene") == false, "scene is not a parameter id");
     }
-    std::printf("scenes: 10 scenes map to the 10 stage presets, 9 pictures valid at %dx%d and listed in CMake, fade and style-file scene tested\n", scenes::kImageWidth, scenes::kImageHeight);
+    std::printf("scenes: %d scenes map to the %d rooms, %d pictures valid at %dx%d and listed in CMake, fade and style-file scene tested\n", scenes::kNumScenes, choir::kNumStagePresets, (int) files.size(), scenes::kImageWidth, scenes::kImageHeight);
     return 0;
 }
