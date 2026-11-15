@@ -33,6 +33,9 @@ int main(int argc, char** argv)
         CHECK(std::fabs(num(g[6]) - d.gain[0]) < 1e-4, "section gain default drifted");
         bool matchDefault = false; CHECK(boolDefault(src, "levelMatch", matchDefault), "AUTO LEVEL (levelMatch) is not declared in PluginProcessor.cpp");
         CHECK(matchDefault == d.levelMatch, "AUTO LEVEL default in the plugin (%d) differs from tests/test_support.h (%d)", (int) matchDefault, (int) d.levelMatch);
+        bool lockDefault = true; CHECK(boolDefault(src, "grainLock", lockDefault), "STEADY NOTES (grainLock) is not declared in PluginProcessor.cpp");
+        CHECK(!lockDefault && !d.lockGrains && !choir::FXParams().lockGrains, "STEADY NOTES must default to OFF everywhere (plugin %d, test defaults %d, engine %d): the default sound must not change", (int) lockDefault, (int) d.lockGrains, (int) choir::FXParams().lockGrains);
+        CHECK(src.find("p.lockGrains=read(raw.grainLock)>.5f") != std::string::npos, "the grainLock parameter is not passed to FXParams::lockGrains");
         std::vector<std::string> c; layoutArgs(src, "\"choirLevel\"", c);
         CHECK(std::fabs(num(c[3]) + choir::StagedChoir::kChoirLevelMaxDb) < 1e-4 && std::fabs(num(c[4]) - choir::StagedChoir::kChoirLevelMaxDb) < 1e-4,
               "CHOIR LEVEL range in PluginProcessor.cpp (%s..%s) must equal +-kChoirLevelMaxDb", c[3].c_str(), c[4].c_str());

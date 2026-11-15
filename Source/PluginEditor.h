@@ -6,6 +6,8 @@
 #include "Scenes.h"
 #include <array>
 #include "UI/TitleLayout.h"
+#include "UI/PageRules.h"
+#include "UI/CurtainModel.h"
 #include "Offline/TakeWorker.h"
 #include "UI/OmniLookAndFeel.h"
 #include <array>
@@ -39,7 +41,8 @@ private:
     void preloadNeighbours();                                  // decodes the previous and next stage's pictures a little at a time, so switching never stalls
     void followScene();                                        // starts a crossfade when the processor's scene changed
     int dragging=-2, hover=-2;   // -2 none, -1 mic, -3 lead, 0..3 soprano..bass
-    int stripHover=-1, arrowHover=-1;   // the solo/mute strip (voice*2 + 0 solo / 1 mute) and the stage arrows (0 left, 1 right)
+    int stripHover=-1, arrowHover=-1;   // the S / M buttons beside the name tags (voice*2 + 0 solo / 1 mute) and the stage arrows (0 left, 1 right)
+    bool chipHover=false;               // the pointer is over the room name
     float grabX=0,grabY=0;            // where the thing was relative to the pointer when the drag began (world metres): nothing snaps to the cursor
     choir::StagePoint leadStart;      // where the lead stood (on the stage) when a mic drag began: she stays there while the mic moves
     juce::Point<float> worldToPoint(float,float) const;
@@ -53,12 +56,14 @@ private:
     choir::StagePoint leadWorld() const;   // where the lead is drawn: mic + display shift + (leadX, leadY)
     void moveMic(float x,float y);          // clamps the mic, then re-derives leadX/leadY from leadStart so she does not move
     int hit(juce::Point<float>) const;
-    // Solo / mute live in a strip along the bottom of the stage, outside the area you drag in, so they can never catch a drag.
+    // Solo / mute are two small buttons (S, M) right of each name tag. They are checked before any drag, so they never start one.
     // Voices 0..3 are the sections, 4 is the lead.
-    juce::Rectangle<float> pillBounds(int section) const;   // the name tag under a section (a label only)
-    juce::Rectangle<float> stripCell(int voice) const;
-    juce::Rectangle<float> stripButton(int voice,bool mute) const;
+    juce::Rectangle<float> pillBounds(int section) const;   // the name tag under a section
+    juce::Rectangle<float> leadPillBounds() const;          // the name tag under the lead
+    juce::Rectangle<float> stripButton(int voice,bool mute) const;   // the S / M button beside a tag
     int stripHit(juce::Point<float>) const;                 // voice*2 + (mute?1:0), or -1
+    juce::Rectangle<float> roomChipRect() const;            // the room name on the stage: click it for the room menu
+    void showRoomMenu();
     juce::Rectangle<float> arrowRect(int side) const;       // 0 left, 1 right: the previous / next stage
     int arrowHit(juce::Point<float>) const;
     void toggleState(int voice,bool mute);
@@ -103,6 +108,20 @@ public:
     SkullButton() : juce::Button("theme") {setMouseCursor(juce::MouseCursor::PointingHandCursor);}
     void paintButton(juce::Graphics& g,bool shouldDrawButtonAsHighlighted,bool shouldDrawButtonAsDown) override;
 };
+// The curtain that is closed when the plugin opens, shows the name, then parts to reveal the choir. Click it to skip the wait.
+// It never deletes itself: when it has finished it stops its timer and the editor removes it from its own timer.
+class CurtainOverlay final : public juce::Component, private juce::Timer {
+public:
+    CurtainOverlay();
+    void paint(juce::Graphics&) override;
+    void mouseDown(const juce::MouseEvent&) override {elapsedMs=curtain::skip(elapsedMs);lastTick=juce::Time::getMillisecondCounterHiRes();}
+    bool finished() const {return curtain::at(elapsedMs).done;}
+    void freezeAt(float ms) {stopTimer();elapsedMs=ms;repaint();}   // for tools/screenshots.cpp
+private:
+    void timerCallback() override;
+    float elapsedMs=0.f;
+    double lastTick=0.0;
+};
 class TourOverlay final : public juce::Component {
 public:
     struct Step { juce::Component* target; juce::Component* alsoTarget; juce::String title,text; };
@@ -131,6 +150,9 @@ public:
     void showForScreenshot(bool proMode,int tab) {processor.setProUi(proMode);currentTab=tab;applyMode();}
     void showThemeForScreenshot(int index) {omni::applyTheme(index);refreshThemedColours();}   // like the skull menu, but nothing is saved to theme.txt
     void dismissTour() {tour.reset();}
+    void dismissCurtain() {curtain.reset();}
+    void showTourForScreenshot() {curtain.reset();startTour();}
+    void showCurtainForScreenshot(float ms) {if(curtain==nullptr) startCurtain();curtain->freezeAt(ms);}
 private:
     enum class Kind { Knob, Fader, Side };
     enum Page { pageMain=0, pageRoom, pageVoice, pageFollow, pageListen, pageTake, pageStems, numPages };
@@ -152,7 +174,7 @@ private:
     juce::Label statusLabel;
     juce::TextButton surpriseButton {"SURPRISE ME"}, modeButton {"EASY"};
     SkullButton skullButton;                       // top of the header, right of the title: the theme changer
-    titlelayout::Result titleLayout {titlelayout::kBaseFont,250.f,titlelayout::kSkull,272.f};
+    titlelayout::Result titleLayout {titlelayout::kBaseFont,250.f,titlelayout::kSkull,titlelayout::kLeft,titlelayout::kLeft+titlelayout::kSkull+titlelayout::kGap};
     void showThemeMenu();
     bool pro=false;
 
@@ -171,8 +193,8 @@ private:
     void selectTab(int);
 
     // ROOM page extras
-    juce::TextButton abButton {"ENGINE: FAITHFUL"}, irButton {"ROOMS / LOAD IR"}, autoLevelButton {"AUTO LEVEL: ON"};
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> abAttachment, autoLevelAttachment;
+    juce::TextButton abButton {"ENGINE: FAITHFUL"}, irButton {"ROOMS / LOAD IR"}, autoLevelButton {"AUTO LEVEL: ON"}, grainLockButton {"STEADY NOTES: OFF"};
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> abAttachment, autoLevelAttachment, grainLockAttachment;
 
     // LISTEN page (and an Easy-mode button on MAIN)
     PianoRoll roll;
@@ -190,6 +212,8 @@ private:
     std::vector<juce::File> styleFiles;
     void rebuildStyleMenu();
     void handleStyleMenu(int id);
+    std::unique_ptr<CurtainOverlay> curtain;
+    void startCurtain();
     std::unique_ptr<TourOverlay> tour;
     void startTour();
     void finishTour();

@@ -43,8 +43,13 @@ int main(int argc, char** argv)
         const auto& t = theme::get(i); const Palette& p = t.p; const std::string n = t.name;
         CHECK(names.insert(n).second, "duplicate theme name %s", n.c_str());
         const uint32_t opaque[] = { p.bg, p.panel, p.panel2, p.stroke, p.track, p.cream, p.muted, p.gold, p.goldHi, p.goldLo, p.ink, p.lead, p.section[0], p.section[1], p.section[2], p.section[3],
-                                    p.knobHi, p.knobLo, p.slot, p.thumb, p.thumbHot, p.thumbLo, p.comboHover, p.listSel, p.rollBg, p.headerTop, p.vignette, p.light, p.dust, p.leadFigure, p.muteBadge, p.record };
+                                    p.knobHi, p.knobLo, p.slot, p.thumb, p.thumbHot, p.thumbLo, p.comboHover, p.listSel, p.rollBg, p.headerTop, p.vignette, p.light, p.dust, p.leadFigure, p.muteBadge, p.record, p.velvet };
         for (uint32_t c : opaque) CHECK((c >> 24) == 0xff, "%s: a colour is not opaque (0x%08x)", n.c_str(), (unsigned) c);
+
+        // the curtain: the lettering (goldHi) and the pale prompt (cream) must read on the velvet, and the velvet must be dark enough to be a curtain
+        CHECK(theme::contrast(p.goldHi, p.velvet) >= 4.5, "%s: the SKELLYCHOIR lettering on the curtain is %.2f:1", n.c_str(), theme::contrast(p.goldHi, p.velvet));
+        CHECK(theme::contrast(p.cream, p.velvet) >= 4.5, "%s: the curtain prompt is %.2f:1", n.c_str(), theme::contrast(p.cream, p.velvet));
+        CHECK(theme::luminance(p.velvet) < .06, "%s: the velvet is too light", n.c_str());
 
         // text on the surfaces it is drawn on: at least 4.5:1 (WCAG AA)
         for (uint32_t surface : { p.bg, p.panel, p.panel2 })
@@ -85,7 +90,7 @@ int main(int argc, char** argv)
             std::string shouted = theme::toFileText(i); for (auto& c : shouted) c = (char) std::toupper((unsigned char) c);
             CHECK(theme::fromFileText("  " + shouted + "\r\n") == i, "theme %d is not read back from upper case with CRLF and spaces", i);
         }
-        CHECK(theme::fromFileText("") == 0 && theme::fromFileText("Purple Haze") == 0 && theme::fromFileText("2") == 0 && theme::fromFileText("\xff\xfe\x01") == 0, "a missing or unknown choice must be Gold");
+        CHECK(theme::fromFileText("") == 0 && theme::fromFileText("Purple Haze") == 0 && theme::fromFileText("Blood Red\n") == 0 && theme::fromFileText("2") == 0 && theme::fromFileText("\xff\xfe\x01") == 0, "a missing or unknown choice must be Gold");
         CHECK(theme::clampIndex(-1) == 0 && theme::clampIndex(99) == 0 && theme::clampIndex(2) == 2, "clampIndex");
         std::printf("[3] theme.txt: names round-trip; empty, unknown or corrupt files give Gold\n");
     }

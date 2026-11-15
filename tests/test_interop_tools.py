@@ -102,7 +102,7 @@ class SkullPreviewTests(unittest.TestCase):
 
     def test_every_theme_is_found_with_its_real_colours(self):
         themes = dict(skull.parse_themes())
-        self.assertEqual(["Gold", "Blood Red", "Neon Green", "Ice Blue"], list(themes))
+        self.assertEqual(["Gold", "Neon Green", "Ice Blue"], list(themes))
         self.assertEqual(0xffe9bb68, themes["Gold"]["gold"])        # the shipped accent
         self.assertEqual(0xff2f1b15, themes["Gold"]["headerTop"])   # the header glow, so the index into the palette is right
         self.assertEqual(0xff08060a, themes["Gold"]["bg"])

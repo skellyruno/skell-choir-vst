@@ -14,7 +14,7 @@ int main(int argc, char** argv)
 
     // 1. the allow-list is made of real parameters, and never of anything the user owns ----------------------------------------------
     {
-        const char* forbidden[] = { "leadGain", "leadX", "leadY", "master", "choirLevel", "levelMatch", "mode", "classicStage", "choirOn", "keyRoot", "scale",
+        const char* forbidden[] = { "leadGain", "leadX", "leadY", "master", "choirLevel", "levelMatch", "grainLock", "mode", "classicStage", "choirOn", "keyRoot", "scale",
                                     "sectionState0", "sectionState1", "sectionState2", "sectionState3" };
         for (int i = 0; i < kNumUserStyleIds; ++i)
         {

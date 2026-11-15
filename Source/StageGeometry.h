@@ -28,9 +28,27 @@ constexpr float kOffsetXMin = -24.f, kOffsetXMax = 24.f, kOffsetYMin = -16.f, kO
 // what the engine itself clamps the microphone to (Stage.h setListener, with the conductor's spot at 0, 0)
 constexpr float kEngineMicXMax = 10.f, kEngineMicYMin = -10.f, kEngineMicYMax = 12.f;
 
+// What the stage VIEW draws (PluginEditor.cpp worldToPoint): world y = kViewFloorY sits kViewFloorPx above the bottom of the plot,
+// and kViewSpan metres fill (plot height - kViewInsetPx) pixels. The solo/mute strip occupies the bottom kViewStripPx of the plot.
+constexpr float kViewFloorY = -1.1f, kViewSpan = 14.f, kViewInsetPx = 52.f, kViewFloorPx = 28.f, kViewStripPx = 26.f;
+constexpr float kMicRingPx = 19.f;   // the mic icon's ring radius: it must not be dragged onto the strip
+
 inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
 inline StagePoint clampMic(StagePoint p)  { return { clampf(p.x, -kMicXMax, kMicXMax), clampf(p.y, kMicYMin, kMicYMax) }; }
+// the lowest y the view lets you DRAG the mic to, so its ring stays above the strip. Never above 0: the default mic spot is always reachable.
+inline float micFloorInView(float plotHeight)
+{
+    const float drawable = plotHeight - kViewInsetPx < 60.f ? 60.f : plotHeight - kViewInsetPx;
+    const float centreAbovePlotFloor = kViewStripPx + kMicRingPx - kViewFloorPx;      // pixels above the y = kViewFloorY line
+    return clampf(centreAbovePlotFloor * kViewSpan / drawable + kViewFloorY, kMicYMin, 0.f);
+}
+inline StagePoint clampMicInView(StagePoint p, float plotHeight)
+{
+    const StagePoint m = clampMic(p);
+    const float floorY = micFloorInView(plotHeight);
+    return { m.x, m.y < floorY ? floorY : m.y };
+}
 inline StagePoint clampLead(StagePoint p) { return { clampf(p.x, -kLeadXMax, kLeadXMax), clampf(p.y, kLeadYMin, kLeadYMax) }; }
 inline float clampOffsetX(float v) { return clampf(v, kOffsetXMin, kOffsetXMax); }
 inline float clampOffsetY(float v) { return clampf(v, kOffsetYMin, kOffsetYMax); }

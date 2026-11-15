@@ -2,6 +2,10 @@
 
 **VST3 effect source project — not a compiled plugin.** This is an upgrade of the OmniChoir FX starter using your original JS stage, worklet, renderer, latest `omnichoir-demo.js`, the five photographic references, and the screenshot of the larger GUI. The original JS files are kept verbatim in `Reference/` for continued native porting. The browser `AudioWorklet` itself cannot execute as a native VST3 audio callback; the relevant stage/mic/group interaction patterns and acoustic concepts are translated into C++.
 
+## v0.9.0 RC2 integration
+
+RC2 adds the opening curtain, 15 acoustic scenes, room-only selection, improved stage distance behavior, optional steady-note smoothing, and expanded regression tests. The repository integration retains the newer hub-free SkellCore/SkellKey receiver and existing host-facing plugin identity. **A release requires a successful Windows VST3 build, functional checks in FL Studio, and real UI/DSP review**; see `docs/RC2_INTEGRATION.md` for verification status.
+
 ## Automatic SkellKey sync (no SkellyHub required)
 
 SkellyChoir automatically receives confirmed Key/Scale/A4 tuning published by **Send to Tune** in SkellKey over SkellCore's same-session shared tuning bus on Windows. Key and Scale drive the existing harmony parameters; A4 is received and available for future synthesis support, but does not retune the current choir engine. No new host automation IDs are introduced, so existing FL Studio projects remain compatible. When the sender is unavailable, manual Key and Scale remain usable.
@@ -11,7 +15,7 @@ SkellyChoir automatically receives confirmed Key/Scale/A4 tuning published by **
 **Listen**: play your vocal through once; the plugin analyses it into notes (piano roll, editable) and the choir then sings that score in your key, in time with the host.
 You choose the **key and scale** (nothing is detected). **Consonants** pass through cleanly instead of being smeared; **Swell** makes the choir follow your dynamics and **Pulse** breathes in time with the song;
 save and load **your own styles**; a first-run tour and a remembered window size. `scripts/build_listening_pack.sh` renders your vocal through every feature so you can hear it; CI now also takes screenshots of every tab.
-What changed in 0.9 (rename, themes, skull button, independent mic and lead) and what is still open: **`docs/V0_9_CHANGELOG.md`**. Measurements, what is and is not verified, and the known limits: **`docs/V0_8_CHANGELOG.md`**. The JUCE layer has still never been compiled against real JUCE and nothing has been listened to.
+What changed in 0.9 (rename, themes, skull button, independent mic and lead) and what is still open: **`docs/V0_9_CHANGELOG.md`**. Measurements, what is and is not verified, and the known limits: **`docs/V0_8_CHANGELOG.md`**. This historical section predates the current Windows VST3 build workflow. Audio listening validation is still a separate requirement.
 
 ## v0.7 — styles, MIDI chords, auto level and an Easy mode
 
@@ -85,7 +89,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --parallel 2
 ```
 
-Or publish the **contents** of this folder at the root of your GitHub repository and use **Actions → Build, test and validate SkellyChoir → Run workflow** for Windows, macOS and Linux artifacts (the workflow also runs the tests and pluginval).
+For the current repository, use the GitHub Actions **Build SkellyChoir Windows VST3** workflow for Windows VST3 artifacts. Local native tests run with `bash scripts/run_tests.sh`; actual FL Studio sound and UI acceptance still require testing.
 
 The plugin is an **audio effect**, not an instrument. It can be placed on a vocal track in REAPER, Ableton, FL Studio, Cubase, etc. **VST3 does not run in Logic Pro; AU support would need to be added.** The JUCE plugin **has not been compiled or host-tested in this sandbox** because this environment cannot reach the JUCE source repository. Source-level validation and native DSP tests are separate from actual VST3 host validation.
 

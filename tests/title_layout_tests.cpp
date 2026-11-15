@@ -13,9 +13,10 @@ int main()
         for (float titleWidth = 120.f; titleWidth <= 360.f; titleWidth += 5.f)   // SKELLYCHOIR in a bold serif at 31 pt is roughly 230-290 px: the range is far wider than that
         {
             const auto r = titlelayout::compute(titleWidth, controlsLeft);
-            const float skullRight = r.skullX + r.skullSize;
-            CHECK(skullRight <= controlsLeft - titlelayout::kClear + 0.01f, "window %d, title %.0f px: the skull ends at %.1f but the controls start at %.1f", window, titleWidth, skullRight, controlsLeft);
-            CHECK(r.skullX >= titlelayout::kLeft + r.titleWidth + titlelayout::kGap - .01f, "the skull overlaps the title");
+            const float titleRight = r.titleX + r.titleWidth;
+            CHECK(titleRight <= controlsLeft - titlelayout::kClear + 0.01f, "window %d, title %.0f px: the title ends at %.1f but the controls start at %.1f", window, titleWidth, titleRight, controlsLeft);
+            CHECK(r.skullX == titlelayout::kLeft, "the skull is not at the left edge");
+            CHECK(r.titleX >= r.skullX + r.skullSize + titlelayout::kGap - .01f, "the title overlaps the skull (it must come after it)");
             CHECK(r.skullSize >= titlelayout::kMinSkull - .01f && r.skullSize <= titlelayout::kSkull + .01f, "skull size %.1f out of range", r.skullSize);
             CHECK(r.fontHeight >= titlelayout::kMinFont - .01f && r.fontHeight <= titlelayout::kBaseFont + .01f, "window %d, title %.0f px: font %.1f is outside %.0f..%.0f", window, titleWidth, r.fontHeight, titlelayout::kMinFont, titlelayout::kBaseFont);
             if (window >= 860 && titleWidth <= 270.f) CHECK(r.fontHeight >= titlelayout::kBaseFont - .01f || r.skullSize <= titlelayout::kSkull, "needless shrinking");
@@ -28,6 +29,6 @@ int main()
     // an absurdly wide title (a different font, a much longer name) bottoms out at a readable size instead of vanishing
     const auto extreme = titlelayout::compute(2000.f, 276.f);
     CHECK(extreme.fontHeight >= 14.f && extreme.skullSize == titlelayout::kMinSkull, "the last-resort floor: font %.1f, skull %.1f", extreme.fontHeight, extreme.skullSize);
-    std::printf("title layout: %ld width combinations fit; the smallest title font used is %.1f pt\n", cases, smallestFont);
+    std::printf("title layout (skull first, then the title): %ld width combinations fit; the smallest title font used is %.1f pt\n", cases, smallestFont);
     return 0;
 }

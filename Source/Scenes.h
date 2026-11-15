@@ -2,10 +2,10 @@
 // Stage scenes: the picture behind the singers follows the stage preset (room) that was last applied. JUCE-free so the mapping,
 // the fade and the picture files can be tested natively (tests/scene_tests.cpp). Scene index == stage preset index (StagePresets.h).
 // Default and Cathedral share the original photo. The files are in Assets/ and listed in CMakeLists.txt (juce_add_binary_data);
-// tools/make_scene_images.py makes the eight new ones.
+// tools/make_scene_images.py makes the thirteen new ones.
 namespace scenes {
 
-constexpr int kNumScenes = 10;
+constexpr int kNumScenes = 15;
 constexpr int kFadeMs = 400;
 constexpr int kImageWidth = 1200, kImageHeight = 530;
 
@@ -18,9 +18,14 @@ constexpr Scene kScenes[kNumScenes] = {
     { "Chapel",          "Assets/Scenes/scene_chapel.jpg" },
     { "Gospel Stage",    "Assets/Scenes/scene_gospel_stage.jpg" },
     { "Stadium Anthem",  "Assets/Scenes/scene_stadium_anthem.jpg" },
-    { "Headphone Choir", "Assets/Scenes/scene_headphone_choir.jpg" },
+    { "Opera House",     "Assets/Scenes/scene_opera_house.jpg" },
     { "Graveyard",       "Assets/Scenes/scene_graveyard.jpg" },
     { "Crypt",           "Assets/Scenes/scene_crypt.jpg" },
+    { "Cave",            "Assets/Scenes/scene_cave.jpg" },
+    { "Bathroom",        "Assets/Scenes/scene_bathroom.jpg" },
+    { "Parking Garage",  "Assets/Scenes/scene_parking_garage.jpg" },
+    { "Marble Dome",     "Assets/Scenes/scene_marble_dome.jpg" },
+    { "Stairwell",       "Assets/Scenes/scene_stairwell.jpg" },
 };
 
 inline int clampScene(int i) { return i < 0 || i >= kNumScenes ? 0 : i; }

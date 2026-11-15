@@ -182,7 +182,7 @@ float ChoirEffect::nextVariation(uint32_t& seed) {
 
 void ChoirEffect::prepare(double sampleRate) {
     sr=(float)std::max(16000.,sampleRate);
-    window=.073f*sr;
+    window=.073f*sr; windowNow=lockedWindow=window;
     minDelay=.009f*sr;
     inputHistory.assign((size_t)(sr*.19f)+32,0.f);
     excitationHistory.assign(inputHistory.size(),0.f);
@@ -195,6 +195,7 @@ void ChoirEffect::reset() {
     std::fill(inputHistory.begin(),inputHistory.end(),0.f);
     std::fill(excitationHistory.begin(),excitationHistory.end(),0.f);
     lpc.fill(0);for(auto& state:formantState)state.fill(0);
+    windowNow=lockedWindow=window;
     formantWrite=lpcCounter=0;
     for (int i=0;i<(int)layers.size();++i) layers[(size_t)i].reset(i*.14159265f);
     write=lfoStep=0; motionSeconds=0; inputEnv=outputEnv=wetNow=0; lowPass.fill(0);
@@ -263,6 +264,18 @@ void ChoirEffect::setVoiceParameters(const FXParams& params) {
     p=params;
     updateTone({0.f,0.f,0.f,0.f});
     updateTargetRatios();
+}
+// Two overlapping grains are read half a window apart. When that half window is a whole number of the voice's pitch periods the two reads
+// are in phase, so they add instead of beating (the ~23 Hz sidebands at large shifts). The window therefore becomes an even number of
+// periods near 73 ms. It moves at kWindowSlewSamplesPerSample so the read points do not shift the pitch audibly, and it only follows
+// the tracker while the voice is clearly pitched. With lockGrains off the target is exactly `window` and nothing moves.
+void ChoirEffect::steerWindow() {
+    if (p.lockGrains && tracker.midi()>=0.f && tracker.confidence()>.6f) {
+        const float f0=440.f*std::pow(2.f,(tracker.midi()-69.f)/12.f);
+        lockedWindow=lockedWindowFor(f0,sr);
+    }
+    const float target=p.lockGrains ? lockedWindow : window;
+    if (windowNow!=target) windowNow=std::fabs(target-windowNow)<=kWindowSlewSamplesPerSample ? target : windowNow+(target>windowNow ? kWindowSlewSamplesPerSample : -kWindowSlewSamplesPerSample);
 }
 void ChoirEffect::updateTargetRatios() {
     // Relative voicings: S fifth up, A third up, T fourth down, B octave down.
@@ -364,6 +377,7 @@ void ChoirEffect::processVoices(float mono,float* voicesOut) {
     excitation=bound(excitation,-2.f,2.f);
     inputHistory[(size_t)write]=pitchedInput;
     excitationHistory[(size_t)write]=excitation;
+    steerWindow();
     for(int i=0;i<sections;++i) {
         for(int j=0;j<singers;++j) {
             const int k=i*singers+j;
@@ -372,7 +386,7 @@ void ChoirEffect::processVoices(float mono,float* voicesOut) {
             const float extra=(3.f*j+2.f*i)*.0015f*sr*p.humanize;
             float x=0,exc=0;
             layers[(size_t)k].processPair(inputHistory,excitationHistory,write,
-                                          window,minDelay+extra+singerDelaySeconds[(size_t)k]*sr,x,exc);
+                                          windowNow,minDelay+extra+singerDelaySeconds[(size_t)k]*sr,x,exc);
             float formed=exc;
             for(int tap=0;tap<lpcOrder;++tap) {
                 const int idx=(formantWrite-tap-1+lpcOrder)%lpcOrder;

@@ -36,6 +36,7 @@ struct FXParams : Params {
     double bpm = 0.0;                // v0.8: the host tempo (0 = unknown, 120 is assumed)
     int keyRoot = 0;                 // v0.8: the key you choose, 0 = C .. 11 = B (nothing is detected)
     int scale = 0;                   // v0.8: index into kScales; 0 = Chromatic = off, the fixed v0.7 intervals
+    bool lockGrains = false;         // v0.9 opt-in: the granular voices use a window of whole pitch periods (steady notes: far fewer sidebands). Off = the original sound, bit for bit
     bool levelMatch = false;         // v0.7: keep the output loudness steady as CHOIR MIX moves (faithful stage only)
     std::array<int,4> midiNotes {{-1,-1,-1,-1}};   // v0.7, mode 2: the MIDI note each section sings (soprano..bass), -1 = no note held
     float choirLevelDb = 0.f;        // v0.6.1: choir level in dB, -12..+12, faithful stage only (the classic stage stays bit-identical to v0.5)
@@ -137,6 +138,17 @@ private:
     FXParams p;
     float sr = 48000.f, inputEnv = 0, outputEnv = 0, wetNow = 0;
     float window = 3072, minDelay = 480, roomL = 0, roomR = 0;
+    float windowNow = 3072, lockedWindow = 3072;   // lockGrains: the window in use glides to a whole even number of pitch periods (see steerWindow)
+    void steerWindow();
+public:
+    static constexpr float kMaxWindowSeconds = .085f, kWindowSlewSamplesPerSample = .002f;   // .2% pitch error at most while the window moves
+    float windowInUse() const { return windowNow; }
+    // the window (in samples) that makes the two grains' read points a whole number of periods apart: an even number of periods near 73 ms, never longer than the history allows
+    static float lockedWindowFor(float f0, float sampleRate) {
+        const float periods = std::max(2.f, 2.f * std::round(.073f * f0 * .5f));
+        return std::min(kMaxWindowSeconds * sampleRate, periods / f0 * sampleRate);
+    }
+private:
     int write = 0, status = 0, rootPC = 0, scanSamples = 0, matchedFrames = 0;
     int lfoStep = 0;
     bool scoreVoicing = false;
