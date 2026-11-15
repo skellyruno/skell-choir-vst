@@ -9,12 +9,16 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   tour:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install real JUCE GUI dependencies
         run: |
           sudo apt-get update
@@ -35,7 +39,7 @@ jobs:
           test -n "$runner"
           xvfb-run -a -s '-screen 0 1920x1080x24' "$runner" ui-tour-screenshots
           test "$(find ui-tour-screenshots -name '*.png' | wc -l)" -eq 4
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: SkellyChoir-UI-Review-Four-Shots

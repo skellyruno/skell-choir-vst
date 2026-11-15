@@ -41,7 +41,9 @@ static Run render(double f0, bool lock, double lockOnAt = -1, double vibratoCent
         double s = 0; for (int k = 1; k <= 10; ++k) s += std::sin(k * ph) / k;
         fx.setVoiceParameters(p); fx.processVoices((float) (.3 * s), out);
         r.v0.push_back(out[0]); r.v8.push_back(out[8]); r.v12.push_back(out[12]);
-        if (prevWin >= 0.f) r.maxStep = std::max(r.maxStep, std::fabs(fx.windowInUse() - prevWin)); prevWin = fx.windowInUse();
+        if (prevWin >= 0.f)
+            r.maxStep = std::max(r.maxStep, std::fabs(fx.windowInUse() - prevWin));
+        prevWin = fx.windowInUse();
         r.minWindow = std::min(r.minWindow, fx.windowInUse()); r.maxWindow = std::max(r.maxWindow, fx.windowInUse());
     }
     r.finalWindow = fx.windowInUse(); return r;
