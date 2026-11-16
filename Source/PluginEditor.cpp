@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "UI/StageControlLayout.h"
 #include "UI/SkullShape.h"
 #include <BinaryData.h>
 #include <algorithm>
@@ -255,10 +256,22 @@ juce::Rectangle<float> StageView::leadPillBounds() const {
     return label;
 }
 juce::Rectangle<float> StageView::stripButton(int voice,bool mute) const {
-    // Compact, vertical hardware-style switches above/right of each section.
-    const auto centre=voice<4 ? worldToPoint(value("x"+juce::String(voice)),value("y"+juce::String(voice))) : leadPosition();
-    const float x=centre.x+(voice<4?32.f:18.f);
-    return {x,centre.y+(mute?-7.f:-20.f),11.f,11.f};
+    // Place the controls beside the actual top-row silhouettes, not a fixed
+    // number of pixels from their centre (which covered singers when enlarged).
+    const auto r=plot();
+    stagecontrols::Rect button;
+    if (voice<4) {
+        const float x=value("x"+juce::String(voice)), y=value("y"+juce::String(voice));
+        const auto topLeft=worldToPoint(x-.705f,y+.53f);
+        const auto topRight=worldToPoint(x+.705f,y+.53f);
+        const float figureSize=juce::jlimit(11.f,19.f,getHeight()*.05f-.18f*(y-5.f));
+        button=stagecontrols::beside(topLeft.x,topRight.x,topRight.y,figureSize,
+                                     r.getX(),r.getY(),r.getRight(),r.getBottom(),mute);
+    } else {
+        const auto lead=leadPosition();
+        button=stagecontrols::besideLead(lead.x,lead.y,r.getX(),r.getY(),r.getRight(),r.getBottom(),mute);
+    }
+    return {button.x,button.y,button.width,button.height};
 }
 int StageView::stripHit(juce::Point<float> pos) const {
     for(int v=0;v<5;++v) for(int m=0;m<2;++m) if(stripButton(v,m==1).expanded(1.5f).contains(pos)) return v*2+m;
@@ -543,12 +556,17 @@ void StageView::paint(juce::Graphics& g) {
         // the four sections. (Solo and mute are the small S and M buttons beside each name tag.)
         bool anySolo=false;
         for(int i=0;i<5;++i) if((int)value("sectionState"+juce::String(i))==1) anySolo=true;
-        const auto drawTagButtons=[&](int v) {   // vertically stacked S/M switches at the upper right
+        const auto drawTagButtons=[&](int v) {   // aligned to each section's outer singer
             const int st=(int)value("sectionState"+juce::String(v));
+            const auto first=stripButton(v,false), last=stripButton(v,true);
+            const auto rail=juce::Rectangle<float>(first.getX()-1.f,first.getY()-1.f,
+                first.getWidth()+2.f,last.getBottom()-first.getY()+2.f);
+            g.setColour(kBg.withAlpha(.84f));g.fillRoundedRectangle(rail,4.f);
+            g.setColour(kCream.withAlpha(.27f));g.drawRoundedRectangle(rail.reduced(.5f),4.f,.6f);
             for(int m=0;m<2;++m) {
                 const auto b=stripButton(v,m==1);
                 const bool active=st==(m==1?2:1),hot=stripHover==v*2+m;
-                g.setColour(active?(m==1?kMuteBadge:kGold):kBg.withAlpha(.76f));g.fillRoundedRectangle(b,3.f);
+                g.setColour(active?(m==1?kMuteBadge:kGold):kBg.withAlpha(.65f));g.fillRoundedRectangle(b,2.5f);
                 g.setColour(hot?kCream:(active?(m==1?kMuteBadge:kGold):kCream.withAlpha(.52f)));g.drawRoundedRectangle(b.reduced(.5f),3.f,hot?1.3f:1.f);
                 g.setColour(active?(m==1?kCream:kInk):kCream.withAlpha(hot?1.f:.80f));g.setFont(boldFont(8.f));
                 g.drawText(m==1?"M":"S",b,juce::Justification::centred);

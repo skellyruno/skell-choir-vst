@@ -2,6 +2,7 @@
 // and loadStyleFile never write a placement parameter, room names are unique and every room differs from the others.
 #include "test_support.h"
 #include "../Source/StagePresets.h"
+#include "../Source/UI/StageControlLayout.h"
 #include "../Source/StylePresets.h"
 #include "../Source/StyleFile.h"
 #include <set>
@@ -76,8 +77,22 @@ int main(int argc, char** argv)
           && ed.find("menu.addSubMenu(\"POSITION\"")!=std::string::npos, "room or position category missing");
     CHECK(ed.find("stripCell") == std::string::npos, "the old bottom solo/mute strip is still in the editor");
     CHECK(ed.find("drawTagButtons(i)") != std::string::npos && ed.find("drawTagButtons(4)") != std::string::npos, "S / M buttons are not drawn beside every name tag and the lead's");
-    CHECK(ed.find("mute?-7.f:-20.f")!=std::string::npos,"solo/mute must be vertically stacked");
+    CHECK(ed.find("stagecontrols::beside(")!=std::string::npos && ed.find("stagecontrols::besideLead(")!=std::string::npos,"solo/mute buttons should track choir and lead at every size");
     CHECK(ed.find("showThemeMenu()")==std::string::npos && ed.find("cycleTheme();")!=std::string::npos,"skull must cycle themes");
     CHECK(ed.find("return curtain::Mode::OncePerSession;")!=std::string::npos,"curtain must play once per session");
-    std::printf("ROOM APPLY TESTS PASSED: %d rooms, %d styles\n", kNumStagePresets, kNumStylePresets);
+    // Check responsive stage badges at default/compact/expanded sizes and after extreme dragging.
+    for (const float width:{730.f,765.f,860.f,1300.f,1500.f}) {
+        const float left=7.f,right=width-35.f,ppm=(right-left)/21.7f,centre=width*.48f;
+        const float topLeft=centre-.705f*ppm,topRight=centre+.705f*ppm,figure=width<900.f?12.f:19.f;
+        const auto s=stagecontrols::beside(topLeft,topRight,120.f,figure,left,10.f,right,450.f,false);
+        const auto m=stagecontrols::beside(topLeft,topRight,120.f,figure,left,10.f,right,450.f,true);
+        CHECK(s.x>=topRight+.62f*figure-.001f && s.x<topRight+.62f*figure+2.f,"S overlaps or detaches from figures at %.0f",width);
+        CHECK(std::abs(m.x-s.x)<.01f && std::abs(m.y-s.y-stagecontrols::kRowStep)<.01f,"S/M pair must stack");
+    }
+    for (const float x:{-65.f,0.f,300.f,600.f,740.f}) for (const float y:{5.f,45.f,380.f,460.f}) {
+        const auto s=stagecontrols::beside(x-25.f,x+25.f,y,15.f,7.f,7.f,730.f,500.f,false);
+        const auto m=stagecontrols::beside(x-25.f,x+25.f,y,15.f,7.f,7.f,730.f,500.f,true);
+        CHECK(s.x>=10.f && s.x+s.width<=727.f && m.y>=37.f && m.y+m.height<=497.f,"S/M escapes stage at %.1f,%.1f",x,y);
+    }
+    std::printf("ROOM APPLY TESTS PASSED: %d rooms, %d styles, responsive S/M placements\n", kNumStagePresets, kNumStylePresets);
 }
