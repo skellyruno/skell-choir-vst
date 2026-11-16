@@ -9,6 +9,9 @@ int main(int argc, char** argv) {
     const auto proc=ts::readFile(root+"/Source/PluginProcessor.cpp");
     const auto proch=ts::readFile(root+"/Source/PluginProcessor.h");
     CHECK(!ed.empty()&&!proc.empty()&&!proch.empty(),"UI/processor sources missing");
+    const auto look=ts::readFile(root+"/Source/UI/OmniLookAndFeel.h");
+    CHECK(look.find("juce::Slider::textBoxOutlineColourId, kStroke.withAlpha(")!=std::string::npos,
+          "slider value readout borders should remain visible after preset changes");
     CHECK(kNumStylePresets==11,"expected the six original and five new factory presets");
     std::set<std::string> names;
     for(const auto& p:kStylePresets) {

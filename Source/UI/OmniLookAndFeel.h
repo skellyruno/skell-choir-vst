@@ -74,8 +74,10 @@ public:
         setColour(juce::ComboBox::outlineColourId, kStroke);
         setColour(juce::Label::textColourId, kCream);
         setColour(juce::Slider::textBoxTextColourId, kCream);
-        setColour(juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
-        setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        // Explicit value-field background and border, including after APVTS preset changes.
+        // Transparent fallback made some refreshed slider labels lose their rectangular frame.
+        setColour(juce::Slider::textBoxBackgroundColourId, kPanel.withAlpha(.92f));
+        setColour(juce::Slider::textBoxOutlineColourId, kStroke.withAlpha(.70f));
         setColour(juce::TooltipWindow::backgroundColourId, kPanel);
         setColour(juce::TooltipWindow::textColourId, kCream);
         setColour(juce::TooltipWindow::outlineColourId, kGold.withAlpha(.6f));
