@@ -140,6 +140,7 @@ public:
     void setMouseCursor(MouseCursor::StandardCursorType) {} void setInterceptsMouseClicks(bool, bool) {}
     void setComponentID(const String&) {} String getComponentID() const { return {}; }
     void setLookAndFeel(LookAndFeel*) {}
+    LookAndFeel& getLookAndFeel() const { static LookAndFeel look; return look; }
     Colour findColour(int) const { return {}; } void setColour(int, Colour) {}
     bool isMouseOver(bool = false) const { return false; } bool isMouseOverOrDragging(bool = false) const { return false; }
     void setSize(int, int) {} Image createComponentSnapshot(Rectangle<int>, bool = true, float = 1.0f) { return {}; } void toFront(bool) {} Rectangle<int> getBounds() const { return {}; } bool isVisible() const { return true; }
@@ -172,7 +173,7 @@ class ListBox : public Component { public: enum ColourIds { backgroundColourId =
     void setRowHeight(int) {} void updateContent() {} int getSelectedRow(int = 0) const { return 0; } };
 class PopupMenu { public: enum ColourIds { backgroundColourId = 1, textColourId, headerTextColourId, highlightedBackgroundColourId, highlightedTextColourId };
     class Options { public: Options withTargetScreenArea(Rectangle<int>) const { return *this; } Options withMinimumWidth(int) const { return *this; } Options withTargetComponent(Component*) const { return *this; } Options withTargetComponent(Component&) const { return *this; } };
-    void addItem(int, const String&, bool = true, bool = false) {} void addSeparator() {} void addSectionHeader(const String&) {} void showMenuAsync(const Options&, std::function<void(int)>) {} };
+    void addItem(int, const String&, bool = true, bool = false) {} void addSeparator() {} void addSectionHeader(const String&) {} void addSubMenu(const String&, const PopupMenu&, bool = true) {} void setLookAndFeel(LookAndFeel*) {} void showMenuAsync(const Options&, std::function<void(int)>) {} };
 class GlyphArrangement { public: void addLineOfText(const Font&, const String&, float, float) {} Rectangle<float> getBoundingBox(int, int, bool) const { return {}; } };
 class FileBrowserComponent { public: enum FileChooserFlags { openMode = 1, saveMode = 2, canSelectFiles = 4, canSelectDirectories = 8, warnAboutOverwriting = 64 }; };
 class FileChooser { public: FileChooser(const String&, const File& = {}, const String& = {}) {} void launchAsync(int, std::function<void(const FileChooser&)>) {} File getResult() const { return {}; } };

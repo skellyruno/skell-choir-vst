@@ -31,6 +31,7 @@ TESTS=(
   "preset_tests|tests/preset_tests.cpp $STAGED|"
   "page_rules_tests|tests/page_rules_tests.cpp|$ROOT"
   "room_apply_tests|tests/room_apply_tests.cpp $STAGED|$ROOT"
+  "position_tests|tests/position_tests.cpp $STAGED|"
   "room_switch_tests|tests/room_switch_tests.cpp $STAGED|"
   "mic_distance_tests|tests/mic_distance_tests.cpp $STAGED|"
   "stage_fuzz_tests|tests/stage_fuzz_tests.cpp $STAGED|"

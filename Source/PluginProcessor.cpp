@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include <BinaryData.h>
 #include "PluginEditor.h"
+#include "PositionPresets.h"
 
 namespace {
 // Saved-state version. Absent = 1 (v0.4 to v0.6.0). 2 = v0.6.1: CHOIR LEVEL exists and the faithful choir carries a +12 dB make-up.
@@ -391,8 +392,24 @@ void OmniChoirAudioProcessor::applyRoom(int index) {
     set("roomSize",s.roomSize);set("roomSeconds",s.roomSeconds);set("absorption",s.absorption);
     set("diffusion",s.diffusion);set("wet",s.wet);set("hall",s.hall);set("hallSeconds",s.hallSeconds);
 }
+void OmniChoirAudioProcessor::applyChoirPosition(int index) {
+    if(index<0 || index>=choir::kNumChoirPositions) return;
+    const auto& position=choir::kChoirPositions[index];
+    for(int i=0;i<4;++i) {
+        setParameterValue("x"+juce::String(i),position.x[i]);
+        setParameterValue("y"+juce::String(i),position.y[i]);
+    }
+}
+void OmniChoirAudioProcessor::applyRoomLayout() {
+    const auto& position=choir::kStagePresets[scenes::clampScene(scene.load())];
+    for(int i=0;i<4;++i) {
+        setParameterValue("x"+juce::String(i),position.x[i]);
+        setParameterValue("y"+juce::String(i),position.y[i]);
+    }
+}
 void OmniChoirAudioProcessor::applyStyleValues(const choir::StylePreset& s) {
-    applyRoom(s.stage);   // the room (never where anyone stands)
+    applyRoom(s.stage);   // acoustic space only
+    applyRoomLayout();    // factory presets also recall their singer formation
     const auto set=[this](const juce::String& id,float value) {setParameterValue(id,value);};
     set("harmony",(float)s.harmony);set("mix",s.mix);set("choirSize",s.size);
     set("ensemble",s.ensemble);set("humanize",s.humanize);set("formant",s.formant);
@@ -442,7 +459,8 @@ bool OmniChoirAudioProcessor::loadStyleFile(const juce::File& file) {
     if(!file.existsAsFile() || file.getSize()>64*1024) return false;   // a style file is a couple of kilobytes: refuse anything silly
     choir::StyleFileData data;
     if(!choir::parseStyleFile(file.loadFileAsString().toStdString(),data) || data.values.empty()) return false;
-    for(const auto& value:data.values) if(!choir::isPlacementId(value.first)) setParameterValue(juce::String(value.first),value.second);   // loading a style never moves anyone
+    for(const auto& value:data.values) if(!choir::isPlacementId(value.first) || choir::isChoirPositionId(value.first))
+        setParameterValue(juce::String(value.first),value.second);   // saved choir formation restores, but never moves lead or microphones
     if(data.scene>=0) scene.store(scenes::clampScene(data.scene));
     return true;
 }

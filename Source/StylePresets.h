@@ -2,7 +2,7 @@
 // v0.7: STYLES (a whole sound in one click), the CHOIR SIZE macro and SURPRISE ME. JUCE-free, so the numbers are tested natively
 // (tests/style_tests.cpp). A style is a room (the space only) plus how they sing; it never touches the
 // lead level, the output, where anyone stands, CHOIR MIX's loudness law (AUTO LEVEL) or the per-section solo/mute state.
-#include "StagePresets.h"
+#include "PositionPresets.h"
 #include <algorithm>
 #include <cstdint>
 
@@ -38,10 +38,11 @@ inline constexpr int kNumStylePresets = (int) (sizeof(kStylePresets) / sizeof(kS
 inline float clamp01(float v) { return std::max(0.f, std::min(1.f, v)); }
 inline float clampTo(float v, ParamRange r) { return std::max(r.lo, std::min(r.hi, v)); }
 
-// the parameter values a style sets: its room (never where anyone stands: choosing a style does not move the choir, the lead or the mic) and how they sing
+// the parameter values a style sets: matching room acoustics, choir positions, and how they sing; the lead and mic stay put
 inline void applyStyle(const StylePreset& s, FXParams& p, float& size)
 {
     applyRoomOnly(kStagePresets[s.stage], p);
+    applyRoomLayoutOnly(kStagePresets[s.stage], p);
     p.harmony = s.harmony; p.mix = s.mix; size = s.size;
     p.ensemble = s.ensemble; p.humanize = s.humanize; p.formant = s.formant;
     p.voiceBlend = s.voiceBlend; p.choirVowel = s.choirVowel; p.vowelFollow = s.vowelFollow; p.choirBreath = s.choirBreath; p.vibrato = s.vibrato;

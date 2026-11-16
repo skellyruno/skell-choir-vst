@@ -195,14 +195,9 @@ void loadWindowSize(int& width,int& height) {
     if(parts.size()>=2 && parts[0].getIntValue()>0 && parts[1].getIntValue()>0) {width=parts[0].getIntValue();height=parts[1].getIntValue();}
 }
 curtain::Mode loadCurtainMode() {
-    const auto file=settingsFolder().getChildFile("curtain.txt");
-    if(!file.existsAsFile()) return curtain::Mode::Always;
-    return curtain::fromFileText(file.loadFileAsString().toStdString());
-}
-void saveCurtainMode(curtain::Mode mode) {
-    const auto folder=settingsFolder();
-    folder.createDirectory();
-    folder.getChildFile("curtain.txt").replaceWithText(juce::String(curtain::toFileText(mode)));
+    // One opening per host process, regardless of legacy "always" settings.
+    // Do not overwrite/delete the old preference; the user can still open old builds.
+    return curtain::Mode::OncePerSession;
 }
 bool& curtainPlayedThisSession() {static bool played=false;return played;}   // lives as long as the host keeps the plugin loaded
 float levelToGlow(float level) {   // a linear level as 0..1 over -54 dB .. 0 dB
@@ -247,8 +242,10 @@ juce::Rectangle<float> StageView::leadPillBounds() const {
     return {lead.x-24.f,lead.y+20.f,48.f,15.f};
 }
 juce::Rectangle<float> StageView::stripButton(int voice,bool mute) const {
-    const auto pill=voice<4?pillBounds(voice):leadPillBounds();
-    return {pill.getRight()+3.f+(mute?16.f:0.f),pill.getY()+.5f,14.f,pill.getHeight()-1.f};
+    // Compact, vertical hardware-style switches above/right of each section.
+    const auto centre=voice<4 ? worldToPoint(value("x"+juce::String(voice)),value("y"+juce::String(voice))) : leadPosition();
+    const float x=centre.x+(voice<4?32.f:18.f);
+    return {x,centre.y+(mute?-7.f:-20.f),11.f,11.f};
 }
 int StageView::stripHit(juce::Point<float> pos) const {
     for(int v=0;v<5;++v) for(int m=0;m<2;++m) if(stripButton(v,m==1).expanded(1.5f).contains(pos)) return v*2+m;
@@ -259,12 +256,37 @@ juce::Rectangle<float> StageView::roomChipRect() const {
     return {r.getRight()-170.f,r.getY()+9.f,160.f,18.f};
 }
 void StageView::showRoomMenu() {
-    juce::PopupMenu menu;
+    juce::PopupMenu menu, roomItems, positionItems;
     const int now=scenes::clampScene(processor.currentScene());
-    for(int i=0;i<choir::kNumStagePresets;++i) menu.addItem(1+i,choir::kStagePresets[i].name,true,i==now);
+    for(int i=0;i<choir::kNumStagePresets;++i)
+        roomItems.addItem(100+i,choir::kStagePresets[i].name,true,i==now);
+    bool recommended=true;
+    const auto& current=choir::kStagePresets[now];
+    for(int i=0;i<4;++i)
+        if(std::abs(value("x"+juce::String(i))-current.x[i])>.02f ||
+           std::abs(value("y"+juce::String(i))-current.y[i])>.02f) recommended=false;
+    positionItems.addItem(200,"Room Layout",true,recommended);
+    positionItems.addSeparator();
+    for(int i=0;i<choir::kNumChoirPositions;++i) {
+        const auto& p=choir::kChoirPositions[i];
+        bool selected=true;
+        for(int v=0;v<4;++v)
+            if(std::abs(value("x"+juce::String(v))-p.x[v])>.02f ||
+               std::abs(value("y"+juce::String(v))-p.y[v])>.02f) selected=false;
+        positionItems.addItem(201+i,p.name,true,selected);
+    }
+    menu.addSubMenu("ROOMS",roomItems);
+    menu.addSubMenu("POSITION",positionItems);
+    menu.setLookAndFeel(&getLookAndFeel());
     juce::Component::SafePointer<StageView> safe(this);
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this).withTargetScreenArea(localAreaToGlobal(roomChipRect().toNearestInt())).withMinimumWidth(160),
-        [safe](int result) {if(safe!=nullptr && result>=1) safe->processor.applyRoom(result-1);});
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this)
+        .withTargetScreenArea(localAreaToGlobal(roomChipRect().toNearestInt())).withMinimumWidth(196),
+        [safe](int result) {
+            if(safe==nullptr) return;
+            if(result>=100 && result<100+choir::kNumStagePresets) safe->processor.applyRoom(result-100);
+            else if(result==200) safe->processor.applyRoomLayout();
+            else if(result>=201 && result<201+choir::kNumChoirPositions) safe->processor.applyChoirPosition(result-201);
+        });
 }
 juce::Rectangle<float> StageView::arrowRect(int side) const {
     const auto r=plot();
@@ -319,9 +341,15 @@ const juce::Image& StageView::sceneImage(int index) {
 void StageView::followScene() {
     const int now=scenes::clampScene(processor.currentScene());
     if(now==shownScene) return;
-    fromScene=shownScene;shownScene=now;
-    // a preset that keeps the same picture (Default <-> Cathedral) does not fade
-    fadeStartMs=scenes::samePicture(fromScene,shownScene)?-1.0e9:juce::Time::getMillisecondCounterHiRes();
+    const double time=juce::Time::getMillisecondCounterHiRes();
+    // If an arrow is clicked during the transition, take whichever scene is
+    // visually dominant as the next fade's source. Never jump to a barely
+    // visible intermediate room as the new full-opacity background.
+    const float progress=scenes::fadeProgress(time-fadeStartMs);
+    const int stable=(progress<.5f ? fromScene : shownScene);
+    fromScene=stable;
+    shownScene=now;
+    fadeStartMs=scenes::samePicture(fromScene,shownScene)?-1.0e9:time;
 }
 const juce::Image& StageView::fittedScene(int index,int w,int h) {
     index=scenes::clampScene(index);
@@ -341,12 +369,18 @@ const juce::Image& StageView::fittedScene(int index,int w,int h) {
 }
 void StageView::preloadNeighbours() {
     const int now=scenes::clampScene(processor.currentScene());
-    for(const int index:{(now+1)%scenes::kNumScenes,(now+scenes::kNumScenes-1)%scenes::kNumScenes})
-        if(!sceneImages[(size_t)index].isValid()) {sceneImage(index);return;}   // one picture per tick
+    for(const int index:{(now+1)%scenes::kNumScenes,(now+scenes::kNumScenes-1)%scenes::kNumScenes}) {
+        // Pre-scale neighbours outside paint to avoid a heavy first-frame resize
+        // when the user clicks a room arrow.
+        const auto r=plot();
+        if(!fittedImages[(size_t)index].isValid() && r.getWidth()>0 && r.getHeight()>0) {
+            fittedScene(index,(int)r.getWidth(),(int)r.getHeight());return;
+        }
+    }
 }
 StageView::StageView(OmniChoirAudioProcessor& p):processor(p) {
     setMouseCursor(juce::MouseCursor::DraggingHandCursor);
-    setTooltip("Drag the singers, your lead and the mic. The lead and the mic move independently: moving the mic never moves her. Double-click one to put it back. Solo (S) and mute (M) for every voice, the lead included, are the small S and M buttons beside each name tag. Click the room name at the top right to pick a room, or use the arrows at the left and right edges for the previous or next one. Rooms never move the singers.");
+    // Intentionally no stage tooltip: it used to obscure the choir whenever M or S was hovered.
     startTimerHz(30);
 }
 juce::Rectangle<float> StageView::plot() const {return getLocalBounds().toFloat().reduced(7.f,7.f);}
@@ -491,14 +525,14 @@ void StageView::paint(juce::Graphics& g) {
         // the four sections. (Solo and mute are the small S and M buttons beside each name tag.)
         bool anySolo=false;
         for(int i=0;i<5;++i) if((int)value("sectionState"+juce::String(i))==1) anySolo=true;
-        const auto drawTagButtons=[&](int v) {   // the small S and M buttons beside a name tag
+        const auto drawTagButtons=[&](int v) {   // vertically stacked S/M switches at the upper right
             const int st=(int)value("sectionState"+juce::String(v));
             for(int m=0;m<2;++m) {
                 const auto b=stripButton(v,m==1);
                 const bool active=st==(m==1?2:1),hot=stripHover==v*2+m;
-                g.setColour(active?(m==1?kMuteBadge:kGold):kBg.withAlpha(.62f));g.fillRoundedRectangle(b,4.f);
-                g.setColour(hot?kCream:(active?(m==1?kMuteBadge:kGold):kStroke));g.drawRoundedRectangle(b.reduced(.5f),4.f,hot?1.5f:1.f);
-                g.setColour(active?(m==1?kCream:kInk):(hot?kCream:kMuted));g.setFont(boldFont(8.5f));
+                g.setColour(active?(m==1?kMuteBadge:kGold):kBg.withAlpha(.76f));g.fillRoundedRectangle(b,3.f);
+                g.setColour(hot?kCream:(active?(m==1?kMuteBadge:kGold):kStroke));g.drawRoundedRectangle(b.reduced(.5f),3.f,hot?1.3f:1.f);
+                g.setColour(active?(m==1?kCream:kInk):(hot?kCream:kMuted));g.setFont(boldFont(7.2f));
                 g.drawText(m==1?"M":"S",b,juce::Justification::centred);
             }
         };
@@ -691,7 +725,7 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
     addAndMakeVisible(choirButton);
     addAndMakeVisible(presetBox);
     presetBox.setTextWhenNothingSelected("PRESETS");
-    presetBox.setTooltip("A preset sets a whole sound in one click: the harmony, the blend, how loose the choir is and its room. It never moves the singers. MY STYLES are sounds you saved. To change just the room, click the room name on the stage. Your lead level, output and solo/mute are never touched.");
+    presetBox.setTooltip("Presets set the choir sound, room and choir formation. MY STYLES restore your saved choir positions too. Click the room name to change only the room or only the position. Lead level, output and solo/mute are untouched.");
     rebuildStyleMenu();
     presetBox.onChange=[this] {
         const int id=presetBox.getSelectedId();
@@ -699,14 +733,14 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
         handleStyleMenu(id);
     };
     surpriseButton.setComponentID("action");
-    surpriseButton.setTooltip("A random but musical style: a room, a harmony and a voice character. Your lead level, output and solo/mute are never touched. Press it again for another.");
+    surpriseButton.setTooltip("A musical style with its matching room and choir formation. Your lead level, output and solo/mute stay as they were.");
     surpriseButton.onClick=[this]{processor.surpriseMe();};
     modeButton.setTooltip("Switch between Easy (just the big choir controls) and Pro (all the detailed controls, without repeating the Easy ones).");
     modeButton.onClick=[this]{processor.setProUi(!processor.proUi());applyMode();};
     addAndMakeVisible(surpriseButton);addAndMakeVisible(modeButton);
     addAndMakeVisible(skullButton);
-    skullButton.setTooltip("Change the colours: gold, neon green or ice blue. Your choice is remembered.");
-    skullButton.onClick=[this] {showThemeMenu();};
+    skullButton.setTooltip("Click to cycle gold, neon green and ice blue. The theme is remembered.");
+    skullButton.onClick=[this] {cycleTheme();};
     statusLabel.setColour(juce::Label::textColourId,kMuted);
     statusLabel.setFont(plainFont(11.f));
     statusLabel.setJustificationType(juce::Justification::centredLeft);
@@ -1224,19 +1258,8 @@ void OmniChoirAudioProcessorEditor::handleStyleMenu(int id) {
         startTour();
     }
 }
-void OmniChoirAudioProcessorEditor::showThemeMenu() {
-    juce::PopupMenu menu;
-    for(int i=0;i<theme::kNumThemes;++i) menu.addItem(100+i,juce::String(theme::get(i).name),true,i==omni::themeIndex());
-    menu.addSeparator();
-    menu.addSectionHeader("CURTAIN");
-    const auto mode=loadCurtainMode();
-    for(int i=0;i<curtain::kNumModes;++i) menu.addItem(200+i,juce::String(curtain::modeName((curtain::Mode)i)),true,(int)mode==i);
-    juce::Component::SafePointer<OmniChoirAudioProcessorEditor> safe(this);
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&skullButton),[safe](int result) {
-        if(safe==nullptr) return;
-        if(result>=100 && result<100+theme::kNumThemes) safe->setTheme(result-100);
-        else if(result>=200 && result<200+curtain::kNumModes) saveCurtainMode((curtain::Mode)(result-200));
-    });
+void OmniChoirAudioProcessorEditor::cycleTheme() {
+    setTheme((omni::themeIndex()+1)%theme::kNumThemes);
 }
 void OmniChoirAudioProcessorEditor::startTour() {
     if(tour!=nullptr) return;
@@ -1244,8 +1267,8 @@ void OmniChoirAudioProcessorEditor::startTour() {
     const auto add=[&](juce::Component* target,juce::Component* also,const char* title,const char* text) {
         if(target!=nullptr && target->isVisible()) steps.push_back({target,also,title,text});
     };
-    add(&stage,nullptr,"YOUR CHOIR","Drag the four sections, your lead voice and the microphone around the stage. Use the S and M buttons along the bottom to solo or mute a section or the lead, and the arrows at the sides to change stage.");
-    add(&presetBox,nullptr,"PRESETS","Pick a preset for a whole sound in one click. You can save your own sounds here too. To change only the room, click the room name on the stage.");
+    add(&stage,nullptr,"YOUR CHOIR","Drag the four sections, your lead and the mic. Compact stacked S/M switches live near each voice. Click the room name for Rooms and Position menus; the side arrows switch rooms.");
+    add(&presetBox,nullptr,"PRESETS","A full preset changes choir sound, room and formation. Saved styles also restore singer locations. To change room or position independently, click the room name.");
     add(&scaleBox,&keyBox,"YOUR KEY","Choose your song's key and scale and the choir's harmony stays in key. Until you pick a scale the harmony stays at fixed intervals. Nothing is detected: you choose.");
     for(auto& slot:slots) if(slot.kind==Kind::Knob && slot.page==pageMain && slot.item->isVisible()) {
         add(slot.item,nullptr,"HOW BIG","One knob for how big the choir sounds. The knobs next to it set how much choir you hear.");
@@ -1253,7 +1276,7 @@ void OmniChoirAudioProcessorEditor::startTour() {
     }
     add(&listenEasyButton,nullptr,"LISTEN, THEN CHOIR","Press LISTEN, play your vocal through the plugin from the start, then press it again. The plugin works out your notes and the choir sings them.");
     add(&modeButton,&surpriseButton,"EASY OR PRO","Easy shows just the big controls. Pro shows all the detailed ones, without repeating the Easy ones. SURPRISE ME picks a random musical style.");
-    add(&skullButton,nullptr,"MAKE IT YOURS","Click the skull to change the colours: gold, neon green or ice blue. SkellyChoir remembers your choice.");
+    add(&skullButton,nullptr,"MAKE IT YOURS","Click the skull to instantly cycle the three colour themes. Your choice is remembered.");
     if(steps.empty()) return;
     tour=std::make_unique<TourOverlay>(std::move(steps),[this]{finishTour();});
     addAndMakeVisible(*tour);

@@ -67,7 +67,9 @@ public:
     bool hasImpulseResponse() const { return staged.hasImpulseResponse(); }
     juce::String impulseResponseName() const { return irName; }
     int currentScene() const {return scene.load();}   // the stage picture: the last stage preset applied (Scenes.h)
-    void applyRoom(int index);                      // the room (space + picture) only: never where anyone stands, harmony, mix, lead level or output
+    void applyRoom(int index);
+    void applyChoirPosition(int index);   // positions submenu, section X/Y only
+    void applyRoomLayout();              // formation recommended for the selected room                      // the room (space + picture) only: never where anyone stands, harmony, mix, lead level or output
     // v0.7 (message thread)
     static constexpr int kNumBuiltInRooms = 3;
     static const char* builtInRoomName(int index);   // Cathedral, Stone Chapel, Small Hall: synthetic impulse responses shipped inside the plugin

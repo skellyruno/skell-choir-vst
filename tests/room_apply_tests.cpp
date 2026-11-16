@@ -30,13 +30,17 @@ int main(int argc, char** argv)
         CHECK(samePlacement(before, p), "room %s -> %s moved someone or changed how they sing", kStagePresets[from].name, kStagePresets[to].name);
         CHECK(sameRoom(p, kStagePresets[to]), "room %s did not set its room fields", kStagePresets[to].name);
     }
-    // 2. a style changes the room and the musical values but never a placement
-    for (int i = 0; i < kNumStylePresets; ++i)
-    {
-        FXParams p = ts::pluginDefaults(); p.x = { -3.f, -1.f, 1.f, 3.f }; p.micX = 1.5f; p.micY = -2.f; p.leadX = .4f; const FXParams before = p; float sz = 0;
-        applyStyle(kStylePresets[i], p, sz);
-        for (size_t k = 0; k < 4; ++k) CHECK(p.x[k] == before.x[k] && p.y[k] == before.y[k] && p.gain[k] == before.gain[k], "style %s moved a section", kStylePresets[i].name);
-        CHECK(p.micX == before.micX && p.micY == before.micY && p.leadX == before.leadX && p.leadY == before.leadY && p.micMode == before.micMode && p.width == before.width, "style %s moved the mic or the lead", kStylePresets[i].name);
+    // 2. full styles restore the matching choir formation without moving listener/lead
+    for (int i = 0; i < kNumStylePresets; ++i) {
+        FXParams p=ts::pluginDefaults();p.x={-3.f,-1.f,1.f,3.f};
+        p.micX=1.5f;p.micY=-2.f;p.leadX=.4f;const FXParams before=p;float sz=0.f;
+        applyStyle(kStylePresets[i],p,sz);
+        const auto& expected=kStagePresets[kStylePresets[i].stage];
+        for(size_t k=0;k<4;++k)
+            CHECK(p.x[k]==expected.x[k]&&p.y[k]==expected.y[k]&&p.gain[k]==before.gain[k],
+                  "style %s did not restore its choir arrangement",kStylePresets[i].name);
+        CHECK(p.micX==before.micX&&p.micY==before.micY&&p.leadX==before.leadX&&p.leadY==before.leadY
+              &&p.micMode==before.micMode&&p.width==before.width,"style %s moved the listener or lead",kStylePresets[i].name);
     }
     // 3. names are unique and every room is a different room
     std::set<std::string> names; for (int i = 0; i < kNumStagePresets; ++i) CHECK(names.insert(kStagePresets[i].name).second, "duplicate room name %s", kStagePresets[i].name);
@@ -52,21 +56,23 @@ int main(int argc, char** argv)
     const std::string src = ts::readFile(root + "/Source/PluginProcessor.cpp");
     CHECK(!src.empty(), "cannot read PluginProcessor.cpp");
     const auto body = [&](const char* fn) { auto b = src.find(std::string("void OmniChoirAudioProcessor::") + fn); if (b == std::string::npos) b = src.find(std::string("bool OmniChoirAudioProcessor::") + fn); CHECK(b != std::string::npos, "%s missing", fn); const auto e = src.find("\nOmniChoir", b + 10), e2 = src.find("\nvoid OmniChoirAudioProcessor::", b + 10), e3 = src.find("\nbool OmniChoirAudioProcessor::", b + 10); return src.substr(b, std::min({ e, e2, e3 }) - b); };
-    for (const char* fn : { "applyRoom", "applyStyleValues", "loadStyleFile" })
-    {
-        const std::string t = body(fn);
-        for (const char* id : { "\"x0\"", "\"y0\"", "\"micX\"", "\"micY\"", "\"gain", "\"micMode\"", "\"width\"", "\"leadX\"", "\"leadY\"", "applyStagePreset" })
-            CHECK(t.find(id) == std::string::npos, "%s touches %s", fn, id);
-    }
-    CHECK(body("loadStyleFile").find("isPlacementId") != std::string::npos, "loadStyleFile no longer filters placement ids");
+    for(const char* id : { "\"x0\"", "\"y0\"", "\"micX\"", "\"micY\"", "\"leadX\"", "\"leadY\"", "applyRoomLayout" })
+        CHECK(body("applyRoom").find(id)==std::string::npos,"room-only change touches %s",id);
+    CHECK(body("applyStyleValues").find("applyRoomLayout()")!=std::string::npos,"full preset must move choir");
+    CHECK(body("loadStyleFile").find("isChoirPositionId")!=std::string::npos
+       && body("loadStyleFile").find("isPlacementId")!=std::string::npos,"saved style does not restore singer positions safely");
     // 6. the editor: rooms are not in the top preset box, the room name opens a room menu, solo/mute are buttons beside the name tags (no strip)
     const std::string ed = ts::readFile(root + "/Source/PluginEditor.cpp");
     CHECK(!ed.empty(), "cannot read PluginEditor.cpp");
     const auto at = ed.find("::rebuildStyleMenu()"); CHECK(at != std::string::npos, "rebuildStyleMenu missing");
     const std::string menuBody = ed.substr(at, ed.find("::handleStyleMenu", at) - at);
     CHECK(menuBody.find("kStagePresets") == std::string::npos && menuBody.find("ROOMS") == std::string::npos, "the top preset box still lists rooms");
-    CHECK(ed.find("showRoomMenu();return;") != std::string::npos && ed.find("kStagePresets[i].name,true,i==now") != std::string::npos, "the room name does not open the room menu");
+    CHECK(ed.find("showRoomMenu();return;")!=std::string::npos && ed.find("menu.addSubMenu(\"ROOMS\"")!=std::string::npos
+          && ed.find("menu.addSubMenu(\"POSITION\"")!=std::string::npos, "room or position category missing");
     CHECK(ed.find("stripCell") == std::string::npos, "the old bottom solo/mute strip is still in the editor");
     CHECK(ed.find("drawTagButtons(i)") != std::string::npos && ed.find("drawTagButtons(4)") != std::string::npos, "S / M buttons are not drawn beside every name tag and the lead's");
+    CHECK(ed.find("mute?-7.f:-20.f")!=std::string::npos,"solo/mute must be vertically stacked");
+    CHECK(ed.find("showThemeMenu()")==std::string::npos && ed.find("cycleTheme();")!=std::string::npos,"skull must cycle themes");
+    CHECK(ed.find("return curtain::Mode::OncePerSession;")!=std::string::npos,"curtain must play once per session");
     std::printf("ROOM APPLY TESTS PASSED: %d rooms, %d styles\n", kNumStagePresets, kNumStylePresets);
 }

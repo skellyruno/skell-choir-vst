@@ -4,6 +4,7 @@
 #include "StageGeometry.h"
 #include "Theme.h"
 #include "Scenes.h"
+#include "PositionPresets.h"
 #include <array>
 #include "UI/TitleLayout.h"
 #include "UI/PageRules.h"
@@ -19,7 +20,7 @@
 enum class ValueFormat { Plain, Percent, PercentOfRange, GainDb, Db, Metres, Seconds };
 
 // The stage: the cathedral, the four sections, the lead and the microphone. Drag any of them; double-click to put one back.
-class StageView final : public juce::Component, public juce::SettableTooltipClient, private juce::Timer {
+class StageView final : public juce::Component, private juce::Timer {
 public:
     explicit StageView(OmniChoirAudioProcessor&);
     void paint(juce::Graphics&) override;
@@ -56,11 +57,11 @@ private:
     choir::StagePoint leadWorld() const;   // where the lead is drawn: mic + display shift + (leadX, leadY)
     void moveMic(float x,float y);          // clamps the mic, then re-derives leadX/leadY from leadStart so she does not move
     int hit(juce::Point<float>) const;
-    // Solo / mute are two small buttons (S, M) right of each name tag. They are checked before any drag, so they never start one.
+    // Solo/mute are small vertical S/M buttons near the upper right of each choir group.
     // Voices 0..3 are the sections, 4 is the lead.
     juce::Rectangle<float> pillBounds(int section) const;   // the name tag under a section
     juce::Rectangle<float> leadPillBounds() const;          // the name tag under the lead
-    juce::Rectangle<float> stripButton(int voice,bool mute) const;   // the S / M button beside a tag
+    juce::Rectangle<float> stripButton(int voice,bool mute) const;   // vertically stacked S/M controls
     int stripHit(juce::Point<float>) const;                 // voice*2 + (mute?1:0), or -1
     juce::Rectangle<float> roomChipRect() const;            // the room name on the stage: click it for the room menu
     void showRoomMenu();
@@ -102,7 +103,7 @@ private:
 };
 
 // A short first-run tour: dims the editor and points at one control at a time.
-// The skull in the header: click it to choose a theme. Painted from the shape list in UI/SkullShape.h.
+// The skull in the header: each click cycles to the next theme. Painted from UI/SkullShape.h.
 class SkullButton final : public juce::Button {
 public:
     SkullButton() : juce::Button("theme") {setMouseCursor(juce::MouseCursor::PointingHandCursor);}
@@ -175,7 +176,7 @@ private:
     juce::TextButton surpriseButton {"SURPRISE ME"}, modeButton {"EASY"};
     SkullButton skullButton;                       // top of the header, right of the title: the theme changer
     titlelayout::Result titleLayout {titlelayout::kBaseFont,250.f,titlelayout::kSkull,titlelayout::kLeft,titlelayout::kLeft+titlelayout::kSkull+titlelayout::kGap};
-    void showThemeMenu();
+    void cycleTheme();
     bool pro=false;
 
     // the pages
