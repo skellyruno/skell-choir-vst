@@ -1451,8 +1451,10 @@ void OmniChoirAudioProcessorEditor::paint(juce::Graphics& g) {
     g.setGradientFill(juce::ColourGradient(kGoldHi,0.f,6.f,kGoldLo,0.f,40.f,false));
     g.setFont(serifFont(titleLayout.fontHeight));
     g.drawText(branding::kTitle,juce::roundToInt(titleLayout.titleX),5,(int)std::ceil(titleLayout.titleWidth)+8,36,juce::Justification::centredLeft);
-    g.setColour(kCream);g.setFont(boldFont(9.f));
-    {const int sx=juce::roundToInt(titleLayout.titleX)+2;g.drawText(branding::kSubtitle,sx,41,juce::jmax(120,keyBox.getX()-sx-6),14,juce::Justification::centredLeft);}
+    g.setColour(kCream);g.setFont(boldFont(getWidth()<750?8.f:9.f));
+    {const int sx=juce::roundToInt(titleLayout.titleX)+2;
+     const juce::String tagline=getWidth()<750?"LIVE / LISTEN / RENDER":branding::kSubtitle;
+     g.drawText(tagline,sx,41,juce::jmax(120,keyBox.getX()-sx-6),14,juce::Justification::centredLeft);}
     g.setColour(kGold.withAlpha(.30f));g.drawLine(14.f,62.f,(float)getWidth()-14.f,62.f,1.f);
     g.setColour(kPanel.withAlpha(.85f));g.fillRoundedRectangle(deckBounds.toFloat(),12.f);
     g.setColour(kStroke);g.drawRoundedRectangle(deckBounds.toFloat().reduced(.5f),12.f,1.f);
