@@ -568,19 +568,19 @@ void StageView::paint(juce::Graphics& g) {
         for(int i=0;i<5;++i) if((int)value("sectionState"+juce::String(i))==1) anySolo=true;
         const auto drawTagButtons=[&](int v) {   // aligned to each section's outer singer
             const int st=(int)value("sectionState"+juce::String(v));
-            // Separate round badges replace the bulky dark rail. Off = crisp
-            // cream outline, Solo = gold, Mute = red. Each stays legible over
-            // any scene without covering singers.
+            // Compact, legible rounded hardware keys replace the bulky rail.
+            // The 9px circular glyphs were too small in actual 730px captures;
+            // 10px keys with 8px lettering remain smaller than the originals.
             for(int m=0;m<2;++m) {
                 const auto b=stripButton(v,m==1);
                 const bool active=st==(m==1?2:1), hot=stripHover==v*2+m;
                 const auto accent=m==1?kMuteBadge:kGold;
-                g.setColour(kBg.withAlpha(.94f));g.fillEllipse(b.expanded(.7f));
-                g.setColour(active?accent:kBg.withAlpha(.76f));g.fillEllipse(b);
-                g.setColour(active?accent.brighter(.23f):kCream.withAlpha(hot?.95f:.64f));
-                g.drawEllipse(b.reduced(.5f),hot?1.25f:.85f);
-                g.setColour(active?(m==1?kCream:kInk):kCream.withAlpha(hot?1.f:.9f));
-                g.setFont(boldFont(7.f));
+                g.setColour(kBg.withAlpha(.94f));g.fillRoundedRectangle(b.expanded(.35f),2.6f);
+                g.setColour(active?accent:kBg.withAlpha(.8f));g.fillRoundedRectangle(b,2.2f);
+                g.setColour(active?accent.brighter(.22f):kCream.withAlpha(hot?.98f:.82f));
+                g.drawRoundedRectangle(b.reduced(.45f),2.f,hot?1.2f:.95f);
+                g.setColour(active?(m==1?kCream:kInk):kCream);
+                g.setFont(boldFont(8.f));
                 g.drawText(m==1?"M":"S",b,juce::Justification::centred);
             }
         };

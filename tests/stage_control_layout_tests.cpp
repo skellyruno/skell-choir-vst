@@ -4,7 +4,7 @@
 #include <cmath>
 int main()
 {
-    CHECK(stagecontrols::kButton <= 9.5f,"solo/mute visible badges must be smaller");
+    CHECK(stagecontrols::kButton <= 10.f,"solo/mute buttons must be smaller than their original 11px size");
     CHECK(stagecontrols::kRowStep-stagecontrols::kButton >= 2.f,"solo/mute buttons need a visible gap");
     int cases=0;
     for(const float width : {730.f,765.f,860.f,1300.f,1500.f}) {
