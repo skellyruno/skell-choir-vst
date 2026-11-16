@@ -14,7 +14,7 @@ int main(int argc, char** argv)
 
     // 1. the allow-list is made of real parameters, and never of anything the user owns ----------------------------------------------
     {
-        const char* forbidden[] = { "leadGain", "leadX", "leadY", "master", "choirLevel", "levelMatch", "grainLock", "mode", "classicStage", "choirOn", "keyRoot", "scale",
+        const char* forbidden[] = { "leadGain", "master", "choirLevel", "levelMatch", "grainLock", "mode", "classicStage", "choirOn", "keyRoot", "scale",
                                     "sectionState0", "sectionState1", "sectionState2", "sectionState3" };
         for (int i = 0; i < kNumUserStyleIds; ++i)
         {
@@ -27,7 +27,7 @@ int main(int argc, char** argv)
         for (int i = 0; i < kNumUserStyleIds; ++i) for (int j = i + 1; j < kNumUserStyleIds; ++j) CHECK(std::string(kUserStyleIds[i]) != kUserStyleIds[j], "duplicate id %s", kUserStyleIds[i]);
         // a style file can capture every parameter a factory style or room sets, so "save what I just loaded" loses nothing
         const char* setByStyles[] = { "harmony", "mix", "choirSize", "ensemble", "humanize", "formant", "voiceBlend", "choirVowel", "vowelFollow", "choirBreath", "vibrato",
-                                      "micX", "micY", "width", "micMode", "roomSize", "roomSeconds", "absorption", "diffusion", "wet", "hall", "hallSeconds" };
+                                      "micX", "micY", "leadX", "leadY", "width", "micMode", "roomSize", "roomSeconds", "absorption", "diffusion", "wet", "hall", "hallSeconds" };
         for (const char* id : setByStyles) CHECK(isUserStyleId(id), "'%s' is set by the factory styles but cannot be saved in a style file", id);
         for (int s = 0; s < 4; ++s) for (const char* p : { "x", "y", "gain" }) CHECK(isUserStyleId(std::string(p) + std::to_string(s)), "section %d '%s' cannot be saved", s, p);
         std::printf("[1] the %d style-file ids are real parameters, none of them is yours (lead, output, auto level, mode, key, solo/mute)\n", kNumUserStyleIds);

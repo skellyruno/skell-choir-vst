@@ -17,21 +17,22 @@ struct StylePreset
     float mix, size;                 // CHOIR MIX and the CHOIR SIZE macro
     float ensemble, humanize, formant;
     float voiceBlend, choirVowel, vowelFollow, choirBreath, vibrato;
+    float micX = 0.f, micY = 0.f, leadX = 0.f, leadY = .4f;  // all four positions are part of a full style
 };
 
 inline constexpr StylePreset kStylePresets[] = {
     { "Natural Choir", "The default sound: a mid-sized hall, a warm blended choir.",
-      0, 0, .78f, .5f,  .58f, .75f, .5f,   0.f,  0.f,  0.f,  .5f, .6f },
+      0, 0, .78f, .5f,  .58f, .75f, .5f,   0.f,  0.f,  0.f,  .5f, .6f,   0.f, 0.f, 0.f, .4f },
     { "Gregorian Chant", "Everyone sings your note in a huge stone nave: pure, steady, slow to bloom.",
-      1, 2, .85f, .8f,  .8f,  .55f, .6f,   .55f, 0.f,  .4f,  .5f, .15f },
+      1, 2, .85f, .8f,  .8f,  .55f, .6f,   .55f, 0.f,  .4f,  .5f, .15f,  0.f,-.7f,-.8f,1.2f },
     { "Gospel Choir", "A wide, close, lively arc with a big warm vibrato and a loose, human feel.",
-      5, 0, .8f,  .55f, .75f, .85f, .55f,  .2f,  .3f,  .5f,  .4f, .7f },
+      5, 0, .8f,  .55f, .75f, .85f, .55f,  .2f,  .3f,  .5f,  .4f, .7f,   0.f, 0.f, 1.0f, .6f },
     { "Cinematic Pad", "A vast hall and a huge, smooth, synthetic-leaning wall of voices.",
-      6, 0, .9f,  .9f,  .85f, .5f,  .5f,   .7f,  .45f, .2f,  .6f, .5f },
+      6, 0, .9f,  .9f,  .85f, .5f,  .5f,   .7f,  .45f, .2f,  .6f, .5f,  0.f,-.8f, 0.f, 1.8f },
     { "Lo-fi Church", "A small stone chapel, minor and a little loose, breathy and close.",
-      4, 1, .7f,  .3f,  .45f, .9f,  .35f,  .1f,  .2f,  .3f,  .7f, .35f },
+      4, 1, .7f,  .3f,  .45f, .9f,  .35f,  .1f,  .2f,  .3f,  .7f, .35f,  0.f, .2f,-.5f, .6f },
     { "Intimate Quartet", "Four singers in a dry room, tight and close: nothing big, everything clear.",
-      3, 0, .6f,  .2f,  .25f, .55f, .5f,   0.f,  0.f,  0.f,  .3f, .5f },
+      3, 0, .6f,  .2f,  .25f, .55f, .5f,   0.f,  0.f,  0.f,  .3f, .5f,   0.f, .8f, 0.f, .4f },
 };
 inline constexpr int kNumStylePresets = (int) (sizeof(kStylePresets) / sizeof(kStylePresets[0]));
 
@@ -43,6 +44,7 @@ inline void applyStyle(const StylePreset& s, FXParams& p, float& size)
 {
     applyRoomOnly(kStagePresets[s.stage], p);
     applyRoomLayoutOnly(kStagePresets[s.stage], p);
+    p.micX = s.micX; p.micY = s.micY; p.leadX = s.leadX; p.leadY = s.leadY;
     p.harmony = s.harmony; p.mix = s.mix; size = s.size;
     p.ensemble = s.ensemble; p.humanize = s.humanize; p.formant = s.formant;
     p.voiceBlend = s.voiceBlend; p.choirVowel = s.choirVowel; p.vowelFollow = s.vowelFollow; p.choirBreath = s.choirBreath; p.vibrato = s.vibrato;
@@ -85,6 +87,8 @@ inline StylePreset randomStyle(std::uint32_t& state)
     s.vowelFollow = randomIn(state, 0.f, .6f);
     s.choirBreath = randomIn(state, .2f, .7f);
     s.vibrato = randomIn(state, .2f, .8f);
+    s.micX = kStagePresets[s.stage].micX; s.micY = kStagePresets[s.stage].micY;
+    s.leadX = randomIn(state, -.7f, .7f); s.leadY = randomIn(state, .4f, 1.1f);
     return s;
 }
 

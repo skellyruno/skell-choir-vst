@@ -30,7 +30,7 @@ int main(int argc, char** argv)
         CHECK(samePlacement(before, p), "room %s -> %s moved someone or changed how they sing", kStagePresets[from].name, kStagePresets[to].name);
         CHECK(sameRoom(p, kStagePresets[to]), "room %s did not set its room fields", kStagePresets[to].name);
     }
-    // 2. full styles restore the matching choir formation without moving listener/lead
+    // 2. full styles recall choir, mic and lead positions, without changing gain or unrelated settings.
     for (int i = 0; i < kNumStylePresets; ++i) {
         FXParams p=ts::pluginDefaults();p.x={-3.f,-1.f,1.f,3.f};
         p.micX=1.5f;p.micY=-2.f;p.leadX=.4f;const FXParams before=p;float sz=0.f;
@@ -39,8 +39,11 @@ int main(int argc, char** argv)
         for(size_t k=0;k<4;++k)
             CHECK(p.x[k]==expected.x[k]&&p.y[k]==expected.y[k]&&p.gain[k]==before.gain[k],
                   "style %s did not restore its choir arrangement",kStylePresets[i].name);
-        CHECK(p.micX==before.micX&&p.micY==before.micY&&p.leadX==before.leadX&&p.leadY==before.leadY
-              &&p.micMode==before.micMode&&p.width==before.width,"style %s moved the listener or lead",kStylePresets[i].name);
+        CHECK(p.micX==kStylePresets[i].micX && p.micY==kStylePresets[i].micY
+              && p.leadX==kStylePresets[i].leadX && p.leadY==kStylePresets[i].leadY,
+              "style %s did not restore mic/lead position", kStylePresets[i].name);
+        CHECK(p.micMode==before.micMode && p.width==before.width && p.leadGain==before.leadGain,
+              "style %s changed mic array or lead level",kStylePresets[i].name);
     }
     // 3. names are unique and every room is a different room
     std::set<std::string> names; for (int i = 0; i < kNumStagePresets; ++i) CHECK(names.insert(kStagePresets[i].name).second, "duplicate room name %s", kStagePresets[i].name);
@@ -50,17 +53,19 @@ int main(int argc, char** argv)
         CHECK(pa.roomSeconds != pb.roomSeconds || pa.wet != pb.wet || pa.hall != pb.hall || pa.roomSize != pb.roomSize, "%s and %s are the same room", kStagePresets[a].name, kStagePresets[b].name);
     }
     // 4. the placement ids
-    for (const char* id : { "micX", "micY", "x0", "x3", "y0", "y3" }) CHECK(isPlacementId(id), "%s is a placement id", id);
+    for (const char* id : { "micX", "micY", "leadX", "leadY", "x0", "x3", "y0", "y3" }) CHECK(isPlacementId(id), "%s is a placement id", id);
     for (const char* id : { "mix", "x4", "y", "xx", "micMode", "width", "wet", "x", "" }) CHECK(!isPlacementId(id), "'%s' is not a placement id", id);
-    // 5. the plugin source: applyRoom, applyStyleValues and loadStyleFile never write a placement parameter
+    // 5. only rooms leave everyone in place; full and saved styles recall stage placements.
     const std::string src = ts::readFile(root + "/Source/PluginProcessor.cpp");
     CHECK(!src.empty(), "cannot read PluginProcessor.cpp");
     const auto body = [&](const char* fn) { auto b = src.find(std::string("void OmniChoirAudioProcessor::") + fn); if (b == std::string::npos) b = src.find(std::string("bool OmniChoirAudioProcessor::") + fn); CHECK(b != std::string::npos, "%s missing", fn); const auto e = src.find("\nOmniChoir", b + 10), e2 = src.find("\nvoid OmniChoirAudioProcessor::", b + 10), e3 = src.find("\nbool OmniChoirAudioProcessor::", b + 10); return src.substr(b, std::min({ e, e2, e3 }) - b); };
     for(const char* id : { "\"x0\"", "\"y0\"", "\"micX\"", "\"micY\"", "\"leadX\"", "\"leadY\"", "applyRoomLayout" })
         CHECK(body("applyRoom").find(id)==std::string::npos,"room-only change touches %s",id);
     CHECK(body("applyStyleValues").find("applyRoomLayout()")!=std::string::npos,"full preset must move choir");
-    CHECK(body("loadStyleFile").find("isChoirPositionId")!=std::string::npos
-       && body("loadStyleFile").find("isPlacementId")!=std::string::npos,"saved style does not restore singer positions safely");
+    for(const char* id : { "\"micX\"", "\"micY\"", "\"leadX\"", "\"leadY\"" })
+        CHECK(body("applyStyleValues").find(id)!=std::string::npos,"full preset must move %s",id);
+    CHECK(body("loadStyleFile").find("setParameterValue(juce::String(value.first),value.second)")!=std::string::npos,
+          "saved style should restore allow-listed stage positions");
     // 6. the editor: rooms are not in the top preset box, the room name opens a room menu, solo/mute are buttons beside the name tags (no strip)
     const std::string ed = ts::readFile(root + "/Source/PluginEditor.cpp");
     CHECK(!ed.empty(), "cannot read PluginEditor.cpp");

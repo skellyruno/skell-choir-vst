@@ -120,7 +120,7 @@ public:
         label.setFont(boldFont(10.f));
         label.setInterceptsMouseClicks(false,false);
         slider.setSliderStyle(juce::Slider::LinearVertical);
-        slider.setTextBoxStyle(juce::Slider::TextBoxBelow,false,50,15);
+        slider.setTextBoxStyle(juce::Slider::TextBoxBelow,false,42,15);
         refreshColours();
         const auto text=makeText(ValueFormat::GainDb,unity,slider.getMinimum(),slider.getMaximum());
         slider.textFromValueFunction=text.text;
@@ -399,13 +399,13 @@ StageView::StageView(OmniChoirAudioProcessor& p):processor(p) {
 juce::Rectangle<float> StageView::plot() const {return getLocalBounds().toFloat().reduced(7.f,7.f);}
 juce::Point<float> StageView::worldToPoint(float x,float y) const {
     const auto r=plot();
-    return {r.getCentreX()+x*r.getWidth()/23.f,
-            r.getBottom()-28.f-(y+1.1f)/14.f*(r.getHeight()-52.f)};
+    return {r.getCentreX()+x*r.getWidth()/choir::StageGeometry::kViewWidthSpan,
+            r.getBottom()-choir::StageGeometry::kViewFloorPx-(y-choir::StageGeometry::kViewFloorY)/choir::StageGeometry::kViewSpan*(r.getHeight()-choir::StageGeometry::kViewInsetPx)};
 }
 juce::Point<float> StageView::pointToWorld(juce::Point<float> pt) const {
     const auto r=plot();
-    return {(pt.x-r.getCentreX())*23.f/r.getWidth(),
-            (r.getBottom()-28.f-pt.y)*14.f/(r.getHeight()-52.f)-1.1f};
+    return {(pt.x-r.getCentreX())*choir::StageGeometry::kViewWidthSpan/r.getWidth(),
+            (r.getBottom()-choir::StageGeometry::kViewFloorPx-pt.y)*choir::StageGeometry::kViewSpan/(r.getHeight()-choir::StageGeometry::kViewInsetPx)+choir::StageGeometry::kViewFloorY};
 }
 float StageView::value(const juce::String& id) const {
     if(auto* a=processor.parameters.getRawParameterValue(id))return a->load();
@@ -439,10 +439,15 @@ int StageView::hit(juce::Point<float> pos) const {
     const float groupReach=std::max(18.f,(float)getWidth()*.033f);
     for(int i=0;i<4;++i) {
         const float x=value("x"+juce::String(i)),y=value("y"+juce::String(i));
+        // The section-name pill is also a drag handle, not a dead part of the stage.
+        if(pillBounds(i).contains(pos)) return i;
         for(int row=0;row<3;++row)for(int col=0;col<4;++col)
             test(i,worldToPoint(x+(col-1.5f)*.47f+(row%2)*.12f,y+(row-1.f)*.53f),groupReach);
     }
-    test(-1,worldToPoint(value("micX"),value("micY")),24.f);
+    if(leadPillBounds().contains(pos)) return -3;
+    const auto mic=worldToPoint(value("micX"),value("micY"));
+    if(juce::Rectangle<float>(mic.x-18.f,mic.y+19.f,36.f,15.f).contains(pos)) return -1;
+    test(-1,mic,24.f);
     test(-3,leadPosition(),26.f);
     return found;
 }
@@ -544,8 +549,8 @@ void StageView::paint(juce::Graphics& g) {
                 const auto b=stripButton(v,m==1);
                 const bool active=st==(m==1?2:1),hot=stripHover==v*2+m;
                 g.setColour(active?(m==1?kMuteBadge:kGold):kBg.withAlpha(.76f));g.fillRoundedRectangle(b,3.f);
-                g.setColour(hot?kCream:(active?(m==1?kMuteBadge:kGold):kStroke));g.drawRoundedRectangle(b.reduced(.5f),3.f,hot?1.3f:1.f);
-                g.setColour(active?(m==1?kCream:kInk):(hot?kCream:kMuted));g.setFont(boldFont(7.2f));
+                g.setColour(hot?kCream:(active?(m==1?kMuteBadge:kGold):kCream.withAlpha(.52f)));g.drawRoundedRectangle(b.reduced(.5f),3.f,hot?1.3f:1.f);
+                g.setColour(active?(m==1?kCream:kInk):kCream.withAlpha(hot?1.f:.80f));g.setFont(boldFont(8.f));
                 g.drawText(m==1?"M":"S",b,juce::Justification::centred);
             }
         };
@@ -711,10 +716,11 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
     setLookAndFeel(&lnf);
     omni::applyTheme(loadSavedTheme());lnf.refreshColours();appliedTheme=omni::themeIndex();   // before any component takes a colour
     {
-        int width=860,height=600;
+        int width=765,height=534;  // 11% smaller than the original 860 x 600 default
         loadWindowSize(width,height);
-        setResizable(true,true);setResizeLimits(800,540,1500,1050);
-        setSize(juce::jlimit(800,1500,width),juce::jlimit(540,1050,height));
+        if(width==860 && height==600) {width=765;height=534;}  // migrate the exact old default only
+        setResizable(true,true);setResizeLimits(730,500,1500,1050);
+        setSize(juce::jlimit(730,1500,width),juce::jlimit(500,1050,height));
     }
     addAndMakeVisible(stage);addAndMakeVisible(meterStrip);
 
@@ -738,7 +744,7 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
     addAndMakeVisible(choirButton);
     addAndMakeVisible(presetBox);
     presetBox.setTextWhenNothingSelected("PRESETS");
-    presetBox.setTooltip("Presets set the choir sound, room and choir formation. MY STYLES restore your saved choir positions too. Click the room name to change only the room or only the position. Lead level, output and solo/mute are untouched.");
+    presetBox.setTooltip("Presets recall the room, choir, lead and mic positions. MY STYLES restore those saved positions too. Click the room name to change only the room or only the position. Lead level, output and solo/mute are untouched.");
     rebuildStyleMenu();
     presetBox.onChange=[this] {
         const int id=presetBox.getSelectedId();
@@ -1281,7 +1287,7 @@ void OmniChoirAudioProcessorEditor::startTour() {
         if(target!=nullptr && target->isVisible()) steps.push_back({target,also,title,text});
     };
     add(&stage,nullptr,"YOUR CHOIR","Drag the four sections, your lead and the mic. Compact stacked S/M switches live near each voice. Click the room name for Rooms and Position menus; the side arrows switch rooms.");
-    add(&presetBox,nullptr,"PRESETS","A full preset changes choir sound, room and formation. Saved styles also restore singer locations. To change room or position independently, click the room name.");
+    add(&presetBox,nullptr,"PRESETS","A full preset recalls sound, room, choir, lead and mic placement. Saved styles can restore all those positions. To change room or position independently, click the room name.");
     add(&scaleBox,&keyBox,"YOUR KEY","Choose your song's key and scale and the choir's harmony stays in key. Until you pick a scale the harmony stays at fixed intervals. Nothing is detected: you choose.");
     for(auto& slot:slots) if(slot.kind==Kind::Knob && slot.page==pageMain && slot.item->isVisible()) {
         add(slot.item,nullptr,"HOW BIG","One knob for how big the choir sounds. The knobs next to it set how much choir you hear.");

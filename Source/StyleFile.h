@@ -13,7 +13,7 @@ namespace choir {
 
 inline constexpr const char* kUserStyleIds[] = {
     "x0", "y0", "gain0", "x1", "y1", "gain1", "x2", "y2", "gain2", "x3", "y3", "gain3",              // where the four sections stand
-    "micX", "micY", "width", "micMode",                                                                // the microphones
+    "micX", "micY", "leadX", "leadY", "width", "micMode",                                                                // the microphones
     "roomSize", "roomSeconds", "absorption", "diffusion", "wet", "hall", "hallSeconds",                // the room
     "harmony", "mix", "choirSize", "ensemble", "humanize", "formant",                                  // how the choir is built
     "voiceBlend", "choirVowel", "vowelFollow", "choirBreath", "vibrato",                               // how the singers sing
@@ -27,14 +27,14 @@ inline bool isUserStyleId(const std::string& id)
     return false;
 }
 
-// A saved style can restore choir positions; microphone positions remain protected for existing sessions.
+// A saved style can restore all stage placements; older files lacking lead/mic values leave them unchanged.
 inline bool isChoirPositionId(const std::string& id)
 {
     return id.size() == 2 && (id[0] == 'x' || id[0] == 'y') && id[1] >= '0' && id[1] <= '3';
 }
 inline bool isPlacementId(const std::string& id)
 {
-    return id == "micX" || id == "micY" || isChoirPositionId(id);
+    return id == "micX" || id == "micY" || id == "leadX" || id == "leadY" || isChoirPositionId(id);
 }
 
 struct StyleFileData

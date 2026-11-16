@@ -409,8 +409,9 @@ void OmniChoirAudioProcessor::applyRoomLayout() {
 }
 void OmniChoirAudioProcessor::applyStyleValues(const choir::StylePreset& s) {
     applyRoom(s.stage);   // acoustic space only
-    applyRoomLayout();    // factory presets also recall their singer formation
+    applyRoomLayout();    // a full style recalls the entire stage formation
     const auto set=[this](const juce::String& id,float value) {setParameterValue(id,value);};
+    set("micX",s.micX);set("micY",s.micY);set("leadX",s.leadX);set("leadY",s.leadY);
     set("harmony",(float)s.harmony);set("mix",s.mix);set("choirSize",s.size);
     set("ensemble",s.ensemble);set("humanize",s.humanize);set("formant",s.formant);
     set("voiceBlend",s.voiceBlend);set("choirVowel",s.choirVowel);set("vowelFollow",s.vowelFollow);
@@ -459,8 +460,8 @@ bool OmniChoirAudioProcessor::loadStyleFile(const juce::File& file) {
     if(!file.existsAsFile() || file.getSize()>64*1024) return false;   // a style file is a couple of kilobytes: refuse anything silly
     choir::StyleFileData data;
     if(!choir::parseStyleFile(file.loadFileAsString().toStdString(),data) || data.values.empty()) return false;
-    for(const auto& value:data.values) if(!choir::isPlacementId(value.first) || choir::isChoirPositionId(value.first))
-        setParameterValue(juce::String(value.first),value.second);   // saved choir formation restores, but never moves lead or microphones
+    for(const auto& value:data.values)
+        setParameterValue(juce::String(value.first),value.second);   // allow-listed placement and sound, including lead/mic; older files omit unknown values
     if(data.scene>=0) scene.store(scenes::clampScene(data.scene));
     return true;
 }
