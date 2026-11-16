@@ -45,6 +45,9 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 10.; }
     // v0.8: the factory styles are the host's preset list
+    // Non-audio label stored in existing APVTS state; IDs and automation remain unchanged.
+    juce::String activeStyleName() const {return parameters.state.getProperty("skellyActiveStyle").toString();}
+    void setActiveStyleName(const juce::String& value) {parameters.state.setProperty("skellyActiveStyle",value,nullptr);}
     int getNumPrograms() override { return choir::kNumStylePresets; }
     int getCurrentProgram() override { return currentProgram; }
     void setCurrentProgram(int index) override;

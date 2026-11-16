@@ -154,6 +154,8 @@ public:
     void dismissCurtain() {curtain.reset();}
     void showTourForScreenshot() {curtain.reset();startTour();}
     void showCurtainForScreenshot(float ms) {if(curtain==nullptr) startCurtain();curtain->freezeAt(ms);}
+    void showPresetForScreenshot(int index) {processor.applyStyle(index);refreshPresetSelection();}
+    void showKeyScaleForScreenshot(int key,int scale) {keyBox.setSelectedId(key+1,juce::sendNotificationSync);scaleBox.setSelectedId(scale+1,juce::sendNotificationSync);}
 private:
     enum class Kind { Knob, Fader, Side };
     enum Page { pageMain=0, pageRoom, pageVoice, pageFollow, pageListen, pageTake, pageStems, numPages };
@@ -169,7 +171,7 @@ private:
     // header
     juce::TextButton choirButton {"CHOIR ON"};
     juce::ComboBox keyBox, scaleBox;   // v0.8: you choose the key and scale; nothing is detected
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> keyAttachment, scaleAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> scaleAttachment; // KEY uses explicit UI selection/automation mapping
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> choirAttachment;
     juce::ComboBox presetBox;
     juce::Label statusLabel;
@@ -211,6 +213,10 @@ private:
     static void saveTheme(int index);
     // styles, the first-run tour and the remembered window size
     std::vector<juce::File> styleFiles;
+    juce::String lastPresetName;
+    int lastSyncedKey=-1;
+    void refreshPresetSelection();
+    void syncKeySelection();
     void rebuildStyleMenu();
     void handleStyleMenu(int id);
     std::unique_ptr<CurtainOverlay> curtain;

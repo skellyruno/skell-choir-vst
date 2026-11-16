@@ -32,7 +32,7 @@ jobs:
         run: cmake -S . -B build-ui -G Ninja -DCMAKE_BUILD_TYPE=Release -DOMNICHOIR_BUILD_SCREENSHOTS=ON
       - name: Build SkellyChoir renderer
         run: cmake --build build-ui --target OmniChoirScreenshots --parallel 2
-      - name: Verify full RC2 scene, theme and UI capture coverage
+      - name: Verify room scenes, themes, selected preset and key/scale editor controls
         run: |
           set -euo pipefail
           runner=$(find build-ui -type f -name OmniChoirScreenshots -executable | head -n 1)
@@ -41,13 +41,14 @@ jobs:
           # The RC2 renderer intentionally emits 15 screen states, 3 themes,
           # and 15 individual room scenes—not the old four-shot preview.
           actual=$(find ui-tour-screenshots -type f -name '*.png' | wc -l)
-          test "$actual" -eq 33 || { echo "::error::Expected 33 screenshots, got $actual"; exit 1; }
+          test "$actual" -eq 35 || { echo "::error::Expected 35 screenshots, got $actual"; exit 1; }
           test "$(find ui-tour-screenshots -type f -name '15-scene-*.png' | wc -l)" -eq 15
           test "$(find ui-tour-screenshots -type f -name '14-theme-*.png' | wc -l)" -eq 3
           for required in 00a-curtain-closed.png 00b-curtain-parting.png \
               01-first-run-tour.png 02-easy-mode.png 03-pro-main.png \
               05-room.png 12-smallest-window.png 13-large-window.png \
-              14-theme-neon-green.png 15-scene-14-stairwell.png; do
+              14-theme-neon-green.png 15-scene-14-stairwell.png \
+              16-selected-preset.png 17-key-scale-selected.png; do
             test -s "ui-tour-screenshots/$required" || { echo "::error::Missing or empty $required"; exit 1; }
           done
           echo "Verified all $actual real editor PNG captures"

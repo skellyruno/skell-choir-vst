@@ -108,6 +108,26 @@ int main(int argc, char** argv)
         juce::String name = scenes::kScenes[i].presetName; name = name.replaceCharacter(' ', '-').toLowerCase();
         savePng(*editor, folder, "15-scene-" + juce::String(i) + "-" + name);
     }
+    // Exercise the actual JUCE editor, not only string checks: preset display
+    // and key changes must work with SCALE still in its off state.
+    editor->setSize(765, 534);
+    editor->showForScreenshot(true, 0);
+    editor->showPresetForScreenshot(6); // Midnight Cathedral (long name)
+    if (processor.activeStyleName() != juce::String(choir::kStylePresets[6].name)) {
+        std::fprintf(stderr,"preset selection failed to retain its name\n"); return 4;
+    }
+    savePng(*editor, folder, "16-selected-preset");
+    editor->showKeyScaleForScreenshot(0,0);
+    editor->showKeyScaleForScreenshot(6,0);
+    if ((int)processor.parameters.getRawParameterValue("keyRoot")->load()!=6
+        || (int)processor.parameters.getRawParameterValue("scale")->load()!=0) {
+        std::fprintf(stderr,"independent key selection failed\n"); return 5;
+    }
+    editor->showKeyScaleForScreenshot(6,1);
+    if ((int)processor.parameters.getRawParameterValue("scale")->load()!=1) {
+        std::fprintf(stderr,"scale selection failed\n"); return 6;
+    }
+    savePng(*editor, folder, "17-key-scale-selected");
     std::printf("done: %s\n", folder.getFullPathName().toRawUTF8());
     return 0;
 }

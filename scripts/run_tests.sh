@@ -43,6 +43,7 @@ TESTS=(
   "style_tests|tests/style_tests.cpp $STAGED|$ROOT"
   "room_ir_tests|tests/room_ir_tests.cpp $STAGED|$ROOT"
   "key_scale_tests|tests/key_scale_tests.cpp $STAGED|"
+  "key_preset_ui_tests|tests/key_preset_ui_tests.cpp|$ROOT"
   "swell_pulse_tests|tests/swell_pulse_tests.cpp $STAGED|"
   "consonant_tests|tests/consonant_tests.cpp $STAGED|$ROOT"
   "style_file_tests|tests/style_file_tests.cpp $STAGED|$ROOT"

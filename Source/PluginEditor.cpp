@@ -745,11 +745,24 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
     // ---- header: key, scale, style / room, choir on/off
     {
         static const char* scaleLabels[]={"NO SCALE","MAJOR","MINOR","HARM. MINOR","DORIAN","MIXOLYDIAN","PENTA MAJOR","PENTA MINOR"};
-        for(int i=0;i<12;++i)keyBox.addItem("KEY "+juce::String(choir::kKeyNames[i]),i+1);
-        for(int i=1;i<choir::kNumScales;++i)scaleBox.addItem(scaleLabels[i],i+1);   // no "no scale" entry: it is simply what it starts as, shown blank
+        for(int i=0;i<12;++i)keyBox.addItem(choir::kKeyNames[i],i+1); // chosen key is C, F#, etc.
+        scaleBox.addItem("SCALE",1); // value zero remains the fixed-interval/off mode
+        for(int i=1;i<choir::kNumScales;++i)scaleBox.addItem(scaleLabels[i],i+1);
         keyBox.setTextWhenNothingSelected("KEY");scaleBox.setTextWhenNothingSelected("SCALE");
-        keyAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.parameters,"keyRoot",keyBox);
         scaleAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.parameters,"scale",scaleBox);
+        // Key must be available even when scale=0. No parameter or automation ID changes.
+        keyBox.onChange=[this] {
+            const int id=keyBox.getSelectedId();
+            if(id<1 || id>12) return;
+            processor.parameters.state.setProperty("skellyKeySelected",true,nullptr);
+            if(auto* parameter=processor.parameters.getParameter("keyRoot")) {
+                parameter->beginChangeGesture();
+                parameter->setValueNotifyingHost(parameter->convertTo0to1((float)(id-1)));
+                parameter->endChangeGesture();
+            }
+            lastSyncedKey=id-1;
+        };
+        syncKeySelection();
         keyBox.setTooltip("The key of your song. With a scale chosen, the choir sings harmony that stays in this key.");
         scaleBox.setTooltip("The scale of your song. Until you pick one the harmony stays at fixed intervals (a fifth, a third, a fourth below, an octave below). Nothing is detected: you choose.");
         addAndMakeVisible(keyBox);addAndMakeVisible(scaleBox);
@@ -766,9 +779,11 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
     rebuildStyleMenu();
     presetBox.onChange=[this] {
         const int id=presetBox.getSelectedId();
-        presetBox.setSelectedId(0,juce::dontSendNotification);
+        if(id==0) return;
         handleStyleMenu(id);
+        if(id>=900) refreshPresetSelection(); // commands are not presets
     };
+    refreshPresetSelection();
     surpriseButton.setComponentID("action");
     surpriseButton.setTooltip("A musical style with its matching room and choir formation. Your lead level, output and solo/mute stay as they were.");
     surpriseButton.onClick=[this]{processor.surpriseMe();};
@@ -1257,6 +1272,20 @@ void OmniChoirAudioProcessorEditor::rebuildStyleMenu() {
     presetBox.addItem("Load a style file...",901);
     presetBox.addItem("Open my styles folder",902);
     presetBox.addItem("Show the tour",903);
+    refreshPresetSelection();
+}
+void OmniChoirAudioProcessorEditor::refreshPresetSelection() {
+    const auto chosen=processor.activeStyleName();
+    if(chosen.isNotEmpty()) presetBox.setText(chosen,juce::dontSendNotification);
+    else presetBox.setSelectedId(0,juce::dontSendNotification);
+    lastPresetName=chosen;
+}
+void OmniChoirAudioProcessorEditor::syncKeySelection() {
+    const int key=juce::jlimit(0,11,(int)processor.parameters.getRawParameterValue("keyRoot")->load());
+    const bool chosen=(bool)processor.parameters.state.getProperty("skellyKeySelected",false);
+    const int selected=(chosen||key!=0)?key+1:0;
+    if(keyBox.getSelectedId()!=selected) keyBox.setSelectedId(selected,juce::dontSendNotification);
+    lastSyncedKey=key;
 }
 void OmniChoirAudioProcessorEditor::handleStyleMenu(int id) {
     if(id>=300 && id<900) {
@@ -1386,7 +1415,12 @@ void OmniChoirAudioProcessorEditor::timerCallback() {
         curtain.reset();
         if(!settingsFolder().getChildFile("tour-done").existsAsFile()) startTour();   // the first time this user opens the plugin
     }
-    if(omni::themeIndex()!=appliedTheme) refreshThemedColours();   // another open instance of the plugin changed the theme
+    if(omni::themeIndex()!=appliedTheme) refreshThemedColours();
+    if(processor.activeStyleName()!=lastPresetName) refreshPresetSelection();
+    const int observedKey=(int)processor.parameters.getRawParameterValue("keyRoot")->load();
+    if(lastSyncedKey!=-1 && observedKey!=lastSyncedKey)
+        processor.parameters.state.setProperty("skellyKeySelected",true,nullptr); // host automation
+    if(observedKey!=lastSyncedKey) syncKeySelection();   // another open instance of the plugin changed the theme
     juce::String msg="Drag the singers, your lead and the mic on the stage. Double-click one to put it back.";
     // ---- LISTEN: the take is captured, analysed and then sung
     auto& session=processor.listenSession();
@@ -1402,10 +1436,7 @@ void OmniChoirAudioProcessorEditor::timerCallback() {
         const int key=read("keyRoot"),scale=read("scale"),harmony=read("harmony");
         if((key!=lastKey||scale!=lastScale||harmony!=lastHarmony) && lastKey>=0) session.revoice(key,scale,harmony);
         lastKey=key;lastScale=scale;lastHarmony=harmony;
-        keyBox.setEnabled(scale>0);
-        // both start blank: with no scale chosen the key is blank too; choosing a scale shows the key (C until you change it)
-        if(scale==0 && keyBox.getSelectedId()!=0) keyBox.setSelectedId(0,juce::dontSendNotification);
-        else if(scale>0 && keyBox.getSelectedId()==0) keyBox.setSelectedId(key+1,juce::dontSendNotification);
+        // Key and scale are independently selectable; no forced reset.
     }
     switch(session.state()) {
         case choir::ListenSession::Listening:msg="LISTENING: play your take through the plugin from the start, then press STOP.   "+juce::String(session.capturedSeconds(),1)+" s";break;
@@ -1522,11 +1553,11 @@ void OmniChoirAudioProcessorEditor::resized() {
     auto header=getLocalBounds().removeFromTop(headerHeight).reduced(m,0);
     choirButton.setBounds(header.removeFromRight(126).withSizeKeepingCentre(126,36));
     header.removeFromRight(8);
-    presetBox.setBounds(header.removeFromRight(160).withSizeKeepingCentre(160,30));
+    presetBox.setBounds(header.removeFromRight(176).withSizeKeepingCentre(176,30)); // accommodate selected name
     header.removeFromRight(8);
-    scaleBox.setBounds(header.removeFromRight(124).withSizeKeepingCentre(124,30));
+    scaleBox.setBounds(header.removeFromRight(114).withSizeKeepingCentre(114,30));
     header.removeFromRight(6);
-    keyBox.setBounds(header.removeFromRight(78).withSizeKeepingCentre(78,30));
+    keyBox.setBounds(header.removeFromRight(74).withSizeKeepingCentre(74,30));
     {   // the title shrinks if it must so that title + skull always end before the first control (UI/TitleLayout.h)
         juce::GlyphArrangement glyphs;
         glyphs.addLineOfText(serifFont(titlelayout::kBaseFont),branding::kTitle,0.f,0.f);

@@ -166,7 +166,7 @@ class TextButton : public Button { public: enum ColourIds { buttonColourId = 1, 
 class ComboBox : public Component, public SettableTooltipClient { public:
     enum ColourIds { backgroundColourId = 1, textColourId, outlineColourId, buttonColourId, arrowColourId };
     void clear(NotificationType = sendNotificationAsync) {} void addItem(const String&, int) {} void addSectionHeading(const String&) {} void addSeparator() {} void addItemList(const StringArray&, int) {} void setSelectedId(int, NotificationType = sendNotificationAsync) {} int getSelectedId() const { return 0; }
-    void setTextWhenNothingSelected(const String&) {} std::function<void()> onChange; };
+    void setTextWhenNothingSelected(const String&) {} void setText(const String&, NotificationType = sendNotificationAsync) {} std::function<void()> onChange; };
 class ScrollBar { public: enum ColourIds { thumbColourId = 1 }; };
 class ListBoxModel { public: virtual ~ListBoxModel() = default; virtual int getNumRows() = 0; virtual void paintListBoxItem(int, Graphics&, int, int, bool) = 0; };
 class ListBox : public Component { public: enum ColourIds { backgroundColourId = 1, outlineColourId, textColourId }; ListBox(const String& = {}, ListBoxModel* = nullptr) {}
@@ -245,7 +245,8 @@ class AudioParameterFloatAttributes { public: AudioParameterFloatAttributes with
 class AudioParameterFloat : public RangedAudioParameter { public: AudioParameterFloat(const ParameterID&, const String&, NormalisableRange<float>, float, const AudioParameterFloatAttributes& = {}) {} };
 class AudioParameterBool : public RangedAudioParameter { public: AudioParameterBool(const ParameterID&, const String&, bool) {} };
 class AudioParameterChoice : public RangedAudioParameter { public: AudioParameterChoice(const ParameterID&, const String&, const StringArray&, int) {} };
-class ValueTree { public: static ValueTree fromXml(const XmlElement&) { return {}; } String getType() const { return {}; } std::unique_ptr<XmlElement> createXml() const; };
+class var { public: var() {} var(bool) {} var(const String&) {} String toString() const { return {}; } explicit operator bool() const { return false; } };
+class ValueTree { public: static ValueTree fromXml(const XmlElement&) { return {}; } String getType() const { return {}; } std::unique_ptr<XmlElement> createXml() const; var getProperty(const String&,var={}) const { return {}; } void setProperty(const String&,var,void*) {} };
 inline std::unique_ptr<XmlElement> ValueTree::createXml() const { return std::make_unique<XmlElement>(); }
 class AudioProcessorValueTreeState {
 public:

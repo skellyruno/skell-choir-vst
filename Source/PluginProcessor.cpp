@@ -421,10 +421,13 @@ void OmniChoirAudioProcessor::applyStyleValues(const choir::StylePreset& s) {
 void OmniChoirAudioProcessor::applyStyle(int index) {
     if(index<0 || index>=choir::kNumStylePresets) return;
     applyStyleValues(choir::kStylePresets[index]);
+    currentProgram=index;
+    setActiveStyleName(choir::kStylePresets[index].name);
 }
 void OmniChoirAudioProcessor::surpriseMe() {
     if(surpriseState==0) surpriseState=juce::Time::getMillisecondCounter()|1u;
     applyStyleValues(choir::randomStyle(surpriseState));
+    setActiveStyleName("Surprise Me");
 }
 void OmniChoirAudioProcessor::setCurrentProgram(int index) {
     // some hosts set program 0 when they load a plugin: only a real change applies a style, so a restored session is never overwritten
@@ -463,6 +466,7 @@ bool OmniChoirAudioProcessor::loadStyleFile(const juce::File& file) {
     for(const auto& value:data.values)
         setParameterValue(juce::String(value.first),value.second);   // allow-listed placement and sound, including lead/mic; older files omit unknown values
     if(data.scene>=0) scene.store(scenes::clampScene(data.scene));
+    setActiveStyleName(data.name.empty()?file.getFileNameWithoutExtension():juce::String(data.name));
     return true;
 }
 void OmniChoirAudioProcessor::startListening() {

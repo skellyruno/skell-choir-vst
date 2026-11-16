@@ -33,6 +33,16 @@ inline constexpr StylePreset kStylePresets[] = {
       4, 1, .7f,  .3f,  .45f, .9f,  .35f,  .1f,  .2f,  .3f,  .7f, .35f,  0.f, .2f,-.5f, .6f },
     { "Intimate Quartet", "Four singers in a dry room, tight and close: nothing big, everything clear.",
       3, 0, .6f,  .2f,  .25f, .55f, .5f,   0.f,  0.f,  0.f,  .3f, .5f,   0.f, .8f, 0.f, .4f },
+    { "Midnight Cathedral", "Dark minor harmonies in a lofty cathedral with gently drifting voices.",
+      1, 1, .84f, .7f, .65f, .62f, .55f, .35f, .25f, .3f, .5f, .38f, 0.f, -.3f, -.2f, .8f },
+    { "Stadium Anthem", "A bright and broad full-choir anthem with open room reflections.",
+      6, 0, .84f, .78f, .75f, .65f, .55f, .3f, .3f, .35f, .4f, .62f, 0.f, -.3f, .4f, .7f },
+    { "Close Harmony", "A dry, clear, intimate blend for tight arrangements.",
+      3, 0, .77f, .32f, .38f, .52f, .5f, .1f, .05f, .15f, .33f, .4f, 0.f, .35f, 0.f, .45f },
+    { "Ethereal Bloom", "Airy, floating voices gathered in an expansive marble dome.",
+      13, 2, .83f, .72f, .68f, .55f, .56f, .5f, .55f, .25f, .55f, .32f, .2f, -.25f, -.25f, 1.0f },
+    { "Underground Echo", "A shadowy chamber with slow, breathy minor swells.",
+      9, 1, .81f, .6f, .55f, .72f, .53f, .3f, .4f, .25f, .62f, .35f, 0.f, -.2f, .2f, .75f },
 };
 inline constexpr int kNumStylePresets = (int) (sizeof(kStylePresets) / sizeof(kStylePresets[0]));
 
