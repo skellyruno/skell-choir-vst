@@ -31,6 +31,7 @@ TESTS=(
   "preset_tests|tests/preset_tests.cpp $STAGED|"
   "page_rules_tests|tests/page_rules_tests.cpp|$ROOT"
   "room_apply_tests|tests/room_apply_tests.cpp $STAGED|$ROOT"
+  "position_tests|tests/position_tests.cpp $STAGED|"
   "room_switch_tests|tests/room_switch_tests.cpp $STAGED|"
   "mic_distance_tests|tests/mic_distance_tests.cpp $STAGED|"
   "stage_fuzz_tests|tests/stage_fuzz_tests.cpp $STAGED|"
@@ -42,6 +43,7 @@ TESTS=(
   "style_tests|tests/style_tests.cpp $STAGED|$ROOT"
   "room_ir_tests|tests/room_ir_tests.cpp $STAGED|$ROOT"
   "key_scale_tests|tests/key_scale_tests.cpp $STAGED|"
+  "key_preset_ui_tests|tests/key_preset_ui_tests.cpp|$ROOT"
   "swell_pulse_tests|tests/swell_pulse_tests.cpp $STAGED|"
   "consonant_tests|tests/consonant_tests.cpp $STAGED|$ROOT"
   "style_file_tests|tests/style_file_tests.cpp $STAGED|$ROOT"
@@ -54,6 +56,8 @@ TESTS=(
   "skull_shape_tests|tests/skull_shape_tests.cpp|"
   "theme_tests|tests/theme_tests.cpp|$ROOT"
   "stage_geometry_tests|tests/stage_geometry_tests.cpp|$ROOT"
+  "stage_control_layout_tests|tests/stage_control_layout_tests.cpp|"
+  "stage_realtime_allocation_tests|tests/stage_realtime_allocation_tests.cpp|"
   "listen_race_tests|tests/listen_race_tests.cpp Source/Offline/FullTakeScan.cpp $ENGINE|"
 )
 

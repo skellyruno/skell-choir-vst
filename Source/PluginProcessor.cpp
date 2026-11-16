@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include <BinaryData.h>
 #include "PluginEditor.h"
+#include "PositionPresets.h"
 
 namespace {
 // Saved-state version. Absent = 1 (v0.4 to v0.6.0). 2 = v0.6.1: CHOIR LEVEL exists and the faithful choir carries a +12 dB make-up.
@@ -391,9 +392,26 @@ void OmniChoirAudioProcessor::applyRoom(int index) {
     set("roomSize",s.roomSize);set("roomSeconds",s.roomSeconds);set("absorption",s.absorption);
     set("diffusion",s.diffusion);set("wet",s.wet);set("hall",s.hall);set("hallSeconds",s.hallSeconds);
 }
+void OmniChoirAudioProcessor::applyChoirPosition(int index) {
+    if(index<0 || index>=choir::kNumChoirPositions) return;
+    const auto& position=choir::kChoirPositions[index];
+    for(int i=0;i<4;++i) {
+        setParameterValue("x"+juce::String(i),position.x[i]);
+        setParameterValue("y"+juce::String(i),position.y[i]);
+    }
+}
+void OmniChoirAudioProcessor::applyRoomLayout() {
+    const auto& position=choir::kStagePresets[scenes::clampScene(scene.load())];
+    for(int i=0;i<4;++i) {
+        setParameterValue("x"+juce::String(i),position.x[i]);
+        setParameterValue("y"+juce::String(i),position.y[i]);
+    }
+}
 void OmniChoirAudioProcessor::applyStyleValues(const choir::StylePreset& s) {
-    applyRoom(s.stage);   // the room (never where anyone stands)
+    applyRoom(s.stage);   // acoustic space only
+    applyRoomLayout();    // a full style recalls the entire stage formation
     const auto set=[this](const juce::String& id,float value) {setParameterValue(id,value);};
+    set("micX",s.micX);set("micY",s.micY);set("leadX",s.leadX);set("leadY",s.leadY);
     set("harmony",(float)s.harmony);set("mix",s.mix);set("choirSize",s.size);
     set("ensemble",s.ensemble);set("humanize",s.humanize);set("formant",s.formant);
     set("voiceBlend",s.voiceBlend);set("choirVowel",s.choirVowel);set("vowelFollow",s.vowelFollow);
@@ -403,10 +421,13 @@ void OmniChoirAudioProcessor::applyStyleValues(const choir::StylePreset& s) {
 void OmniChoirAudioProcessor::applyStyle(int index) {
     if(index<0 || index>=choir::kNumStylePresets) return;
     applyStyleValues(choir::kStylePresets[index]);
+    currentProgram=index;
+    setActiveStyleName(choir::kStylePresets[index].name);
 }
 void OmniChoirAudioProcessor::surpriseMe() {
     if(surpriseState==0) surpriseState=juce::Time::getMillisecondCounter()|1u;
     applyStyleValues(choir::randomStyle(surpriseState));
+    setActiveStyleName("Surprise Me");
 }
 void OmniChoirAudioProcessor::setCurrentProgram(int index) {
     // some hosts set program 0 when they load a plugin: only a real change applies a style, so a restored session is never overwritten
@@ -442,8 +463,10 @@ bool OmniChoirAudioProcessor::loadStyleFile(const juce::File& file) {
     if(!file.existsAsFile() || file.getSize()>64*1024) return false;   // a style file is a couple of kilobytes: refuse anything silly
     choir::StyleFileData data;
     if(!choir::parseStyleFile(file.loadFileAsString().toStdString(),data) || data.values.empty()) return false;
-    for(const auto& value:data.values) if(!choir::isPlacementId(value.first)) setParameterValue(juce::String(value.first),value.second);   // loading a style never moves anyone
+    for(const auto& value:data.values)
+        setParameterValue(juce::String(value.first),value.second);   // allow-listed placement and sound, including lead/mic; older files omit unknown values
     if(data.scene>=0) scene.store(scenes::clampScene(data.scene));
+    setActiveStyleName(data.name.empty()?file.getFileNameWithoutExtension():juce::String(data.name));
     return true;
 }
 void OmniChoirAudioProcessor::startListening() {

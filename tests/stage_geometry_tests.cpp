@@ -105,6 +105,12 @@ int main(int argc, char** argv)
         std::printf("[4] %ld mic moves: the lead never moves, on the stage or in the room\n", moves);
     }
 
+    // Expanded visual stage uses more of the viewport without changing APVTS automation ranges.
+    CHECK(G::kViewWidthSpan < 23.f && G::kViewWidthSpan >= 21.f,
+          "stage should have wider draggable visual travel while retaining automation ranges");
+    CHECK(G::kViewSpan < 14.f && G::kViewSpan >= 13.f,
+          "stage should have deeper draggable visual travel without clipping singers");
+
     // 5. the clamps ------------------------------------------------------------------------------------------------------
     {
         const auto m = G::clampMic({ 99.f, -99.f }); CHECK(m.x == G::kMicXMax && m.y == G::kMicYMin, "mic clamp");

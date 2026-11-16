@@ -30,7 +30,8 @@ constexpr float kEngineMicXMax = 10.f, kEngineMicYMin = -10.f, kEngineMicYMax = 
 
 // What the stage VIEW draws (PluginEditor.cpp worldToPoint): world y = kViewFloorY sits kViewFloorPx above the bottom of the plot,
 // and kViewSpan metres fill (plot height - kViewInsetPx) pixels. The solo/mute strip occupies the bottom kViewStripPx of the plot.
-constexpr float kViewFloorY = -1.1f, kViewSpan = 14.f, kViewInsetPx = 52.f, kViewFloorPx = 28.f, kViewStripPx = 26.f;
+constexpr float kViewWidthSpan = 21.7f;
+constexpr float kViewFloorY = -1.1f, kViewSpan = 13.6f, kViewInsetPx = 52.f, kViewFloorPx = 28.f, kViewStripPx = 26.f;
 constexpr float kMicRingPx = 19.f;   // the mic icon's ring radius: it must not be dragged onto the strip
 
 inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }

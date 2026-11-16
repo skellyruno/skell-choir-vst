@@ -45,6 +45,9 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 10.; }
     // v0.8: the factory styles are the host's preset list
+    // Non-audio label stored in existing APVTS state; IDs and automation remain unchanged.
+    juce::String activeStyleName() const {return parameters.state.getProperty("skellyActiveStyle").toString();}
+    void setActiveStyleName(const juce::String& value) {parameters.state.setProperty("skellyActiveStyle",value,nullptr);}
     int getNumPrograms() override { return choir::kNumStylePresets; }
     int getCurrentProgram() override { return currentProgram; }
     void setCurrentProgram(int index) override;
@@ -67,7 +70,9 @@ public:
     bool hasImpulseResponse() const { return staged.hasImpulseResponse(); }
     juce::String impulseResponseName() const { return irName; }
     int currentScene() const {return scene.load();}   // the stage picture: the last stage preset applied (Scenes.h)
-    void applyRoom(int index);                      // the room (space + picture) only: never where anyone stands, harmony, mix, lead level or output
+    void applyRoom(int index);
+    void applyChoirPosition(int index);   // positions submenu, section X/Y only
+    void applyRoomLayout();              // formation recommended for the selected room                      // the room (space + picture) only: never where anyone stands, harmony, mix, lead level or output
     // v0.7 (message thread)
     static constexpr int kNumBuiltInRooms = 3;
     static const char* builtInRoomName(int index);   // Cathedral, Stone Chapel, Small Hall: synthetic impulse responses shipped inside the plugin

@@ -55,7 +55,7 @@ int main(int argc, char** argv)
     std::unique_ptr<juce::AudioProcessorEditor> base(processor.createEditor());
     auto* editor = dynamic_cast<OmniChoirAudioProcessorEditor*>(base.get());
     if (editor == nullptr) { std::printf("the processor did not create its editor\n"); return 1; }
-    editor->setSize(860, 600);
+    editor->setSize(765, 534);
 
     const std::vector<int> melody { 60, 64, 67, 64, 69, 65, 62, 60 };
     feed(processor, melody, 2.0);                       // a little singing, so the stage glows and the meters move
@@ -87,11 +87,11 @@ int main(int argc, char** argv)
     editor->showForScreenshot(true, 5);   savePng(*editor, folder, "10-take-file");
     editor->showForScreenshot(true, 6);   savePng(*editor, folder, "11-stems");
     editor->showForScreenshot(true, 0);
-    editor->setSize(800, 540);            savePng(*editor, folder, "12-smallest-window");
+    editor->setSize(730, 500);            savePng(*editor, folder, "12-smallest-window");
     editor->setSize(1300, 900);           savePng(*editor, folder, "13-large-window");
 
     // every theme on the main page, then every stage scene (the picture follows the stage preset; wait out the 400 ms crossfade)
-    editor->setSize(860, 600);
+    editor->setSize(765, 534);
     editor->showForScreenshot(true, 0);
     for (int i = 0; i < theme::kNumThemes; ++i)
     {
@@ -108,6 +108,26 @@ int main(int argc, char** argv)
         juce::String name = scenes::kScenes[i].presetName; name = name.replaceCharacter(' ', '-').toLowerCase();
         savePng(*editor, folder, "15-scene-" + juce::String(i) + "-" + name);
     }
+    // Exercise the actual JUCE editor, not only string checks: preset display
+    // and key changes must work with SCALE still in its off state.
+    editor->setSize(765, 534);
+    editor->showForScreenshot(true, 0);
+    editor->showPresetForScreenshot(6); // Midnight Cathedral (long name)
+    if (processor.activeStyleName() != juce::String(choir::kStylePresets[6].name)) {
+        std::fprintf(stderr,"preset selection failed to retain its name\n"); return 4;
+    }
+    savePng(*editor, folder, "16-selected-preset");
+    editor->showKeyScaleForScreenshot(0,0);
+    editor->showKeyScaleForScreenshot(6,0);
+    if ((int)processor.parameters.getRawParameterValue("keyRoot")->load()!=6
+        || (int)processor.parameters.getRawParameterValue("scale")->load()!=0) {
+        std::fprintf(stderr,"independent key selection failed\n"); return 5;
+    }
+    editor->showKeyScaleForScreenshot(6,1);
+    if ((int)processor.parameters.getRawParameterValue("scale")->load()!=1) {
+        std::fprintf(stderr,"scale selection failed\n"); return 6;
+    }
+    savePng(*editor, folder, "17-key-scale-selected");
     std::printf("done: %s\n", folder.getFullPathName().toRawUTF8());
     return 0;
 }
