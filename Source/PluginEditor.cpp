@@ -239,7 +239,20 @@ juce::Rectangle<float> StageView::pillBounds(int section) const {
 }
 juce::Rectangle<float> StageView::leadPillBounds() const {
     const auto lead=leadPosition();
-    return {lead.x-24.f,lead.y+20.f,48.f,15.f};
+    juce::Rectangle<float> label {lead.x-24.f,lead.y+20.f,48.f,15.f};
+    const auto mic=worldToPoint(value("micX"),value("micY"));
+    // At minimum UI size, the lead label can intersect the microphone halo.
+    // Move it to the side only when the overlap is substantial, keeping the
+    // normal full-size layout unchanged.
+    const juce::Rectangle<float> micRing {mic.x-19.f,mic.y-17.f,38.f,34.f};
+    const float overlapX=std::min(label.getRight(),micRing.getRight())-std::max(label.getX(),micRing.getX());
+    const float overlapY=std::min(label.getBottom(),micRing.getBottom())-std::max(label.getY(),micRing.getY());
+    if(overlapX>6.f && overlapY>6.f) {
+        const auto r=plot();
+        const float sideX=lead.x+(mic.x>=lead.x?-76.f:28.f);
+        label={juce::jlimit(r.getX()+5.f,r.getRight()-53.f,sideX),lead.y+16.f,48.f,15.f};
+    }
+    return label;
 }
 juce::Rectangle<float> StageView::stripButton(int voice,bool mute) const {
     // Compact, vertical hardware-style switches above/right of each section.
