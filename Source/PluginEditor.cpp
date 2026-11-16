@@ -1488,7 +1488,9 @@ void OmniChoirAudioProcessorEditor::layoutPage(int page,juce::Rectangle<int> are
     }
     if(!knobs.empty()) {
         const int cellWidth=juce::jmin(pro?112:170,area.getWidth()/(int)knobs.size());
-        if(!pro)area.removeFromLeft((area.getWidth()-cellWidth*(int)knobs.size())/2);   // Easy: a few big knobs, centred
+        // In expanded windows both Pro and Easy controls should use the full deck balanced around the middle.
+        // At compact sizes there is no extra margin, so the original dense layout is preserved.
+        area.removeFromLeft(juce::jmax(0,(area.getWidth()-cellWidth*(int)knobs.size())/2));
         for(auto* k:knobs)k->setBounds(area.removeFromLeft(cellWidth));
     }
 }
