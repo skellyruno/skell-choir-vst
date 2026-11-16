@@ -274,8 +274,18 @@ juce::Rectangle<float> StageView::stripButton(int voice,bool mute) const {
     return {button.x,button.y,button.width,button.height};
 }
 int StageView::stripHit(juce::Point<float> pos) const {
-    for(int v=0;v<5;++v) for(int m=0;m<2;++m) if(stripButton(v,m==1).expanded(1.5f).contains(pos)) return v*2+m;
-    return -1;
+    // Tiny circular badges retain a larger click target. When two padded
+    // targets meet, choose the closer centre rather than biasing toward S.
+    int closest=-1;
+    float bestDistance=1000000.f;
+    for(int v=0;v<5;++v) for(int m=0;m<2;++m) {
+        const auto b=stripButton(v,m==1);
+        if(!b.expanded(2.5f).contains(pos)) continue;
+        const float dx=pos.x-b.getCentreX(), dy=pos.y-b.getCentreY();
+        const float distance=dx*dx+dy*dy;
+        if(distance<bestDistance) {bestDistance=distance;closest=v*2+m;}
+    }
+    return closest;
 }
 juce::Rectangle<float> StageView::roomChipRect() const {
     const auto r=plot();
@@ -558,17 +568,19 @@ void StageView::paint(juce::Graphics& g) {
         for(int i=0;i<5;++i) if((int)value("sectionState"+juce::String(i))==1) anySolo=true;
         const auto drawTagButtons=[&](int v) {   // aligned to each section's outer singer
             const int st=(int)value("sectionState"+juce::String(v));
-            const auto first=stripButton(v,false), last=stripButton(v,true);
-            const auto rail=juce::Rectangle<float>(first.getX()-1.f,first.getY()-1.f,
-                first.getWidth()+2.f,last.getBottom()-first.getY()+2.f);
-            g.setColour(kBg.withAlpha(.84f));g.fillRoundedRectangle(rail,4.f);
-            g.setColour(kCream.withAlpha(.27f));g.drawRoundedRectangle(rail.reduced(.5f),4.f,.6f);
+            // Separate round badges replace the bulky dark rail. Off = crisp
+            // cream outline, Solo = gold, Mute = red. Each stays legible over
+            // any scene without covering singers.
             for(int m=0;m<2;++m) {
                 const auto b=stripButton(v,m==1);
-                const bool active=st==(m==1?2:1),hot=stripHover==v*2+m;
-                g.setColour(active?(m==1?kMuteBadge:kGold):kBg.withAlpha(.65f));g.fillRoundedRectangle(b,2.5f);
-                g.setColour(hot?kCream:(active?(m==1?kMuteBadge:kGold):kCream.withAlpha(.52f)));g.drawRoundedRectangle(b.reduced(.5f),3.f,hot?1.3f:1.f);
-                g.setColour(active?(m==1?kCream:kInk):kCream.withAlpha(hot?1.f:.80f));g.setFont(boldFont(8.f));
+                const bool active=st==(m==1?2:1), hot=stripHover==v*2+m;
+                const auto accent=m==1?kMuteBadge:kGold;
+                g.setColour(kBg.withAlpha(.94f));g.fillEllipse(b.expanded(.7f));
+                g.setColour(active?accent:kBg.withAlpha(.76f));g.fillEllipse(b);
+                g.setColour(active?accent.brighter(.23f):kCream.withAlpha(hot?.95f:.64f));
+                g.drawEllipse(b.reduced(.5f),hot?1.25f:.85f);
+                g.setColour(active?(m==1?kCream:kInk):kCream.withAlpha(hot?1.f:.9f));
+                g.setFont(boldFont(7.f));
                 g.drawText(m==1?"M":"S",b,juce::Justification::centred);
             }
         };

@@ -50,7 +50,11 @@ public:
     ChoirStage(const StageConfig& cfg, std::vector<Source> srcs)
         : sr(cfg.sampleRate), block(cfg.engineBlock), sources(std::move(srcs)), cfgPower(cfg.power), cfgChoirGain(cfg.choirGain), cfgReverb(cfg.reverb)
     {
+        performers.reserve(cfg.performers.size());
         for (auto& p : cfg.performers) performers.push_back({ p.section, v3(p.x, p.y, p.z) });
+        // Performers stay fixed in number after construction. Preallocate the
+        // geometry scratch before the audio thread can invalidate the layout.
+        places.resize(performers.size());
         spatial = std::make_unique<SpatialRenderer>(sr, block, (int) sources.size());
         mics = cfg.mics; home = cfg.mics.mainPos; room = cfg.room;
         sizeK = cfg.sizeScale; free = cfg.freeMovement; circle = cfg.circle;
@@ -150,7 +154,9 @@ public:
 private:
     void layout()
     {
-        std::vector<V3> places; for (int i = 0; i < (int) performers.size(); ++i) places.push_back(placeOf(i));
+        // A singer/microphone drag makes this run on the audio callback.
+        // Never push_back or allocate here: all storage is already reserved.
+        for (int i = 0; i < (int) performers.size(); ++i) places[(size_t) i] = placeOf(i);
         V3 sum[kNumSections]; int count[kNumSections] = { 0, 0, 0, 0 };
         double my = 1, mx = 1;
         for (int i = 0; i < (int) places.size(); ++i)
@@ -246,6 +252,7 @@ private:
 
     double sr; int block;
     std::vector<Source> sources; std::vector<Performer> performers;
+    std::vector<V3> places;  // fixed-size layout scratch; never reallocates during process()
     std::unique_ptr<SpatialRenderer> spatial;
     V3 home; double listenerMoved = 0, sizeK = 1; bool circle = false;
     double sectionGain[kNumSections] {}, sectionGainSmoothed[kNumSections] {};

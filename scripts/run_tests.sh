@@ -56,6 +56,8 @@ TESTS=(
   "skull_shape_tests|tests/skull_shape_tests.cpp|"
   "theme_tests|tests/theme_tests.cpp|$ROOT"
   "stage_geometry_tests|tests/stage_geometry_tests.cpp|$ROOT"
+  "stage_control_layout_tests|tests/stage_control_layout_tests.cpp|"
+  "stage_realtime_allocation_tests|tests/stage_realtime_allocation_tests.cpp|"
   "listen_race_tests|tests/listen_race_tests.cpp Source/Offline/FullTakeScan.cpp $ENGINE|"
 )
 

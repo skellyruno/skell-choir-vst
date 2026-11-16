@@ -3,7 +3,7 @@
 #include <algorithm>
 namespace stagecontrols {
 struct Rect { float x, y, width, height; };
-constexpr float kButton=11.f, kRowStep=13.f;
+constexpr float kButton=9.f, kRowStep=11.5f; // smaller visible controls; padded hit targets live in the editor
 inline Rect beside(float leftTop,float rightTop,float topRowY,float figureSize,
                    float plotLeft,float plotTop,float plotRight,float plotBottom,bool mute)
 {

@@ -78,6 +78,8 @@ int main(int argc, char** argv)
     CHECK(ed.find("stripCell") == std::string::npos, "the old bottom solo/mute strip is still in the editor");
     CHECK(ed.find("drawTagButtons(i)") != std::string::npos && ed.find("drawTagButtons(4)") != std::string::npos, "S / M buttons are not drawn beside every name tag and the lead's");
     CHECK(ed.find("stagecontrols::beside(")!=std::string::npos && ed.find("stagecontrols::besideLead(")!=std::string::npos,"solo/mute buttons should track choir and lead at every size");
+    CHECK(ed.find("g.fillEllipse(b);")!=std::string::npos && ed.find("g.drawEllipse(b.reduced(.5f)")!=std::string::npos,
+          "S/M must use compact round hardware badges instead of the old bulky backing");
     CHECK(ed.find("showThemeMenu()")==std::string::npos && ed.find("cycleTheme();")!=std::string::npos,"skull must cycle themes");
     CHECK(ed.find("return curtain::Mode::OncePerSession;")!=std::string::npos,"curtain must play once per session");
     // Check responsive stage badges at default/compact/expanded sizes and after extreme dragging.
