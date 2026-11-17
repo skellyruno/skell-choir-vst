@@ -47,8 +47,12 @@ jobs:
       - name: Set reproducible source timestamp
         shell: pwsh
         run: |
-          $epoch = git show -s --format=%ct $env:SOURCE_COMMIT
-          if (-not $epoch -or $epoch -notmatch '^[0-9]+
+          $epoch = (git show -s --format=%ct $env:SOURCE_COMMIT).Trim()
+          if ([string]::IsNullOrWhiteSpace($epoch)) { throw "Unable to determine source commit timestamp" }
+          "SOURCE_DATE_EPOCH=$epoch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "SOURCE_DATE_EPOCH=$epoch"
+      - name: Configure
+        run: cmake -S . -B build -A x64
       - name: Build
         run: cmake --build build --config Release --parallel 2
       - name: Stage exact Windows VST3 bundle
