@@ -44,6 +44,11 @@ jobs:
       SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          # The PR job checks out GitHub's synthetic merge commit, but CMake
+          # derives SOURCE_DATE_EPOCH from SOURCE_COMMIT (the PR head SHA).
+          # Fetch history so that exact head commit is available to git show.
+          fetch-depth: 0
       - name: Configure
         run: cmake -S . -B build -A x64
       - name: Build
