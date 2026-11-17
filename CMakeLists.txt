@@ -99,7 +99,7 @@ if(MSVC)
     if(NOT DEFINED ENV{SOURCE_DATE_EPOCH})
         find_package(Git REQUIRED)
         execute_process(
-            COMMAND "\${GIT_EXECUTABLE}" -C "\${CMAKE_SOURCE_DIR}" show -s --format=%ct HEAD
+            COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_SOURCE_DIR}" show -s --format=%ct HEAD
             OUTPUT_VARIABLE OMNICHOIR_SOURCE_DATE_EPOCH
             OUTPUT_STRIP_TRAILING_WHITESPACE
             RESULT_VARIABLE OMNICHOIR_GIT_TIMESTAMP_RESULT)
@@ -108,17 +108,17 @@ if(MSVC)
             message(FATAL_ERROR
                 "Reproducible MSVC builds require SOURCE_DATE_EPOCH or a valid Git commit timestamp")
         endif()
-        set(ENV{SOURCE_DATE_EPOCH} "\${OMNICHOIR_SOURCE_DATE_EPOCH}")
+        set(ENV{SOURCE_DATE_EPOCH} "${OMNICHOIR_SOURCE_DATE_EPOCH}")
     endif()
 
     string(TIMESTAMP OMNICHOIR_REPRO_DATE "%b %d %Y" UTC)
     string(TIMESTAMP OMNICHOIR_REPRO_TIME "%H:%M:%S" UTC)
     function(omnichoir_apply_reproducible_compile_metadata target_name)
-        if(TARGET \${target_name})
-            target_compile_options(\${target_name} PRIVATE /wd4005)
-            target_compile_definitions(\${target_name} PRIVATE
-                "__DATE__=\\"\${OMNICHOIR_REPRO_DATE}\\""
-                "__TIME__=\\"\${OMNICHOIR_REPRO_TIME}\\"")
+        if(TARGET ${target_name})
+            target_compile_options(${target_name} PRIVATE /wd4005)
+            target_compile_definitions(${target_name} PRIVATE
+                "__DATE__=\\"${OMNICHOIR_REPRO_DATE}\\""
+                "__TIME__=\\"${OMNICHOIR_REPRO_TIME}\\"")
         endif()
     endfunction()
 
