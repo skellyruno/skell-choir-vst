@@ -442,6 +442,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.require_commercial_metadata and not args.manifest:
             raise PackageError("--require-commercial-metadata requires --manifest")
+        if not args.require_commercial_metadata and (
+            args.license_file is not None or args.owner_approved_license
+        ):
+            raise PackageError(
+                "--license-file and --owner-approved-license require --require-commercial-metadata"
+            )
         result = verify_bundle(args.bundle)
         archive_hash = verify_archive(args.bundle, args.archive) if args.archive else None
         if args.manifest:

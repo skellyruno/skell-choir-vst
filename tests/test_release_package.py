@@ -289,5 +289,27 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertIn(f"{gate.digest(license_bytes)}  LICENSE", sums)
         self.assertIn("Third-party license and attribution review is pending", manifest["release_blockers"])
 
+
+    def test_cli_rejects_license_file_without_commercial_gate(self):
+        result = gate.main([
+            "--bundle", str(self.bundle),
+            "--license-file", str(self.root / "LICENSE"),
+        ])
+        self.assertEqual(result, 1)
+
+    def test_cli_rejects_owner_assertion_without_commercial_gate(self):
+        result = gate.main([
+            "--bundle", str(self.bundle),
+            "--owner-approved-license",
+        ])
+        self.assertEqual(result, 1)
+
+    def test_cli_requires_manifest_for_commercial_gate(self):
+        result = gate.main([
+            "--bundle", str(self.bundle),
+            "--require-commercial-metadata",
+        ])
+        self.assertEqual(result, 1)
+
 if __name__ == "__main__":
     unittest.main()
