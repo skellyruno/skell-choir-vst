@@ -10,11 +10,13 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import struct
 import sys
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import urlsplit
 
 PRODUCT = "SkellyChoir"
 VENDOR = "Skell Audio"
@@ -22,6 +24,8 @@ MODULE_RELATIVE = Path("Contents") / "x86_64-win" / f"{PRODUCT}.vst3"
 MODULEINFO_RELATIVE = Path("Contents") / "Resources" / "moduleinfo.json"
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 CID_RE = re.compile(r"^[0-9A-Fa-f]{32}$")
+EMAIL_RE = re.compile(r"^[A-Za-z0-9.!#$%&'*+/=?^_{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$")
+LICENSE_NAME_RE = re.compile(r"^(?:LICENSE|COPYING)(?:\.(?:txt|md))?$", re.IGNORECASE)
 
 
 class PackageError(ValueError):
@@ -130,6 +134,73 @@ def validate_metadata(metadata: dict[str, Any]) -> list[str]:
     return ids
 
 
+
+
+def commercial_metadata_blockers(metadata: dict[str, Any]) -> tuple[list[str], str, str]:
+    """Return release blockers for vendor contact fields without inventing them."""
+    factory = metadata.get("Factory Info")
+    if not isinstance(factory, dict):
+        return ["Factory Info is missing"], "", ""
+
+    raw_url = factory.get("URL")
+    raw_email = factory.get("E-Mail")
+    vendor_url = raw_url.strip() if isinstance(raw_url, str) else ""
+    support_email = raw_email.strip() if isinstance(raw_email, str) else ""
+    blockers: list[str] = []
+
+    parsed = None
+    if vendor_url:
+        try:
+            parsed = urlsplit(vendor_url)
+        except ValueError:
+            parsed = None
+    if (parsed is None or parsed.scheme.lower() != "https" or not parsed.hostname
+            or parsed.username or parsed.password):
+        blockers.append("Factory Info.URL must be a valid HTTPS vendor URL")
+
+    if not support_email or not EMAIL_RE.fullmatch(support_email):
+        blockers.append("Factory Info.E-Mail must be a valid support email address")
+
+    return blockers, vendor_url, support_email
+
+
+def validate_commercial_metadata(
+    metadata: dict[str, Any],
+    license_file: Path | None,
+    owner_approved_license: bool,
+) -> dict[str, Any]:
+    """Require explicit owner assertion, HTTPS contact metadata and a non-empty license."""
+    if not owner_approved_license:
+        raise PackageError(
+            "Commercial metadata gate requires --owner-approved-license; "
+            "the tool cannot determine legal approval"
+        )
+    blockers, vendor_url, support_email = commercial_metadata_blockers(metadata)
+    if blockers:
+        raise PackageError("; ".join(blockers))
+    if license_file is None:
+        raise PackageError("Commercial metadata gate requires an owner-supplied LICENSE or COPYING file")
+
+    source = Path(license_file)
+    if source.is_symlink() or not source.is_file():
+        raise PackageError("License file must be a regular, non-symlink file")
+    if not LICENSE_NAME_RE.fullmatch(source.name):
+        raise PackageError("License filename must be LICENSE, COPYING, LICENSE.txt, LICENSE.md, COPYING.txt or COPYING.md")
+    try:
+        content = source.read_bytes()
+    except OSError as exc:
+        raise PackageError(f"Cannot read owner-supplied license file: {exc}") from exc
+    if not content.strip():
+        raise PackageError("Owner-supplied license file is empty")
+
+    return {
+        "vendor_url": vendor_url,
+        "support_email": support_email,
+        "license_file": source.name,
+        "license_sha256": digest(content),
+        "license_size_bytes": len(content),
+    }
+
 def validate_pe32_plus_x64(binary: bytes) -> None:
     if len(binary) < 0x40 or binary[:2] != b"MZ":
         raise PackageError("Windows PE MZ signature missing")
@@ -237,11 +308,61 @@ def verify_archive(bundle: Path, archive: Path) -> str:
 
 def write_provenance(
     bundle: Path, manifest_path: Path, source_commit: str,
-    ci_commit: str, run_id: str,
+    ci_commit: str, run_id: str, *,
+    require_commercial_metadata: bool = False,
+    license_file: Path | None = None,
+    owner_approved_license: bool = False,
 ) -> dict[str, Any]:
     result = verify_bundle(bundle)
     if not source_commit or not ci_commit or not run_id:
         raise PackageError("Source commit, CI checkout commit and workflow run ID are required")
+
+    metadata, _, _ = load_moduleinfo(Path(bundle) / MODULEINFO_RELATIVE)
+    contact_blockers, vendor_url, support_email = commercial_metadata_blockers(metadata)
+    license_details = None
+    if require_commercial_metadata:
+        license_details = validate_commercial_metadata(
+            metadata, license_file, owner_approved_license
+        )
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        license_source = Path(license_file)
+        packaged_license = manifest_path.parent / license_details["license_file"]
+        if license_source.resolve() != packaged_license.resolve():
+            if packaged_license.exists():
+                raise PackageError(
+                    f"Refusing to overwrite existing package license: {packaged_license.name}"
+                )
+            try:
+                shutil.copyfile(license_source, packaged_license)
+            except OSError as exc:
+                raise PackageError(f"Cannot stage owner-supplied license file: {exc}") from exc
+        packaged_bytes = packaged_license.read_bytes()
+        if not packaged_bytes.strip() or digest(packaged_bytes) != license_details["license_sha256"]:
+            raise PackageError("Packaged license differs from the owner-supplied license")
+        license_details["package_path"] = license_details["license_file"]
+    else:
+        if license_file is not None or owner_approved_license:
+            raise PackageError(
+                "--license-file and --owner-approved-license require --require-commercial-metadata"
+            )
+        contact_blockers.append("Owner-approved LICENSE or COPYING file was not supplied")
+
+    commercial_gate = {
+        "status": "passed" if license_details is not None else "blocked",
+        "owner_approved_license_asserted": bool(owner_approved_license),
+        "vendor_url": vendor_url,
+        "support_email": support_email,
+        "license": license_details,
+        "blockers": [] if license_details is not None else contact_blockers,
+    }
+    release_blockers = [
+        "FL Studio scan, automation, state save/reopen and old-project compatibility are not accepted",
+        "Real music A/B and user listening approval are pending",
+        "Target Windows hardware CPU and latency acceptance are pending",
+        "Third-party license and attribution review is pending",
+    ]
+    if commercial_gate["status"] != "passed":
+        release_blockers.extend(commercial_gate["blockers"])
 
     manifest = {
         "schema_version": 1,
@@ -274,13 +395,8 @@ def write_provenance(
             "pluginval": {"strictness_level": 5, "result": "passed"},
         },
         "release_status": "preview-only",
-        "release_blockers": [
-            "FL Studio scan, automation, state save/reopen and old-project compatibility are not accepted",
-            "Real music A/B and user listening approval are pending",
-            "Vendor URL and support email are empty in the current moduleinfo.json",
-            "Target Windows hardware CPU and latency acceptance are pending",
-            "Third-party license and attribution review is pending",
-        ],
+        "commercial_metadata_gate": commercial_gate,
+        "release_blockers": release_blockers,
     }
 
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -291,6 +407,10 @@ def write_provenance(
         f"{result['moduleinfo_sha256']}  {result['moduleinfo_path']}",
         f"{digest(manifest_text.encode('utf-8'))}  {manifest_path.name}",
     ]
+    if license_details is not None:
+        sums.append(
+            f"{license_details['license_sha256']}  {license_details['package_path']}"
+        )
     (manifest_path.parent / "SHA256SUMS.txt").write_text(
         "\n".join(sums) + "\n", encoding="ascii", newline="\n"
     )
@@ -306,16 +426,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ci-commit", default="")
     parser.add_argument("--run-id", default="")
     parser.add_argument("--pluginval-passed", action="store_true")
+    parser.add_argument(
+        "--require-commercial-metadata",
+        action="store_true",
+        help="Require HTTPS vendor URL, valid support email and an owner-supplied license; does not authorize publishing",
+    )
+    parser.add_argument("--license-file", type=Path)
+    parser.add_argument(
+        "--owner-approved-license",
+        action="store_true",
+        help="Explicitly assert that the supplied LICENSE/COPYING file is owner-approved",
+    )
     args = parser.parse_args(argv)
 
     try:
+        if args.require_commercial_metadata and not args.manifest:
+            raise PackageError("--require-commercial-metadata requires --manifest")
         result = verify_bundle(args.bundle)
         archive_hash = verify_archive(args.bundle, args.archive) if args.archive else None
         if args.manifest:
             if not args.pluginval_passed:
                 raise PackageError("Refusing provenance until the exact staged bundle passes pluginval")
             manifest = write_provenance(
-                args.bundle, args.manifest, args.source_commit, args.ci_commit, args.run_id
+                args.bundle, args.manifest, args.source_commit, args.ci_commit, args.run_id,
+                require_commercial_metadata=args.require_commercial_metadata,
+                license_file=args.license_file,
+                owner_approved_license=args.owner_approved_license,
             )
             print(
                 f"PASS: {PRODUCT} {manifest['version']} Windows x64 VST3; "
