@@ -117,8 +117,8 @@ if(MSVC)
         if(TARGET ${target_name})
             target_compile_options(${target_name} PRIVATE /wd4005)
             target_compile_definitions(${target_name} PRIVATE
-                "__DATE__=\\"${OMNICHOIR_REPRO_DATE}\\""
-                "__TIME__=\\"${OMNICHOIR_REPRO_TIME}\\"")
+                "__DATE__=\"${OMNICHOIR_REPRO_DATE}\""
+                "__TIME__=\"${OMNICHOIR_REPRO_TIME}\"")
         endif()
     endfunction()
 
