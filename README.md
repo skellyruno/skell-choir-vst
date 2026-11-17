@@ -166,10 +166,9 @@ publish or authorize distribution.
 
 ## Reproducible Windows VST3 builds
 
-The Windows workflow sets SOURCE_DATE_EPOCH from the source commit timestamp
-before CMake configuration. On MSVC, CMake pins JUCE's embedded compilation
-date/time to that epoch and enables the linker's /Brepro option for the VST3
-module. A local Windows checkout derives the same epoch from HEAD when the
-environment variable is not supplied. The artifact still records both the
-source commit and CI merge commit; compare module hashes across repeated builds
-before treating the output as proven bit-for-bit reproducible.
+CMake derives SOURCE_DATE_EPOCH from the SOURCE_COMMIT environment variable
+(PR head SHA in CI) or the local Git HEAD when the variable is absent. On MSVC,
+CMake pins JUCE's embedded compilation date/time to that source epoch and
+enables the linker's /Brepro option for the VST3 module. The artifact records
+both the source commit and CI merge commit; compare module hashes across
+repeated builds before treating the output as proven bit-for-bit reproducible.

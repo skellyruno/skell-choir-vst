@@ -98,8 +98,12 @@ target_link_libraries(OmniChoirFX PRIVATE
 if(MSVC)
     if(NOT DEFINED ENV{SOURCE_DATE_EPOCH})
         find_package(Git REQUIRED)
+        set(OMNICHOIR_EPOCH_COMMIT "$ENV{SOURCE_COMMIT}")
+        if(NOT OMNICHOIR_EPOCH_COMMIT)
+            set(OMNICHOIR_EPOCH_COMMIT "HEAD")
+        endif()
         execute_process(
-            COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_SOURCE_DIR}" show -s --format=%ct HEAD
+            COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_SOURCE_DIR}" show -s --format=%ct "${OMNICHOIR_EPOCH_COMMIT}"
             OUTPUT_VARIABLE OMNICHOIR_SOURCE_DATE_EPOCH
             OUTPUT_STRIP_TRAILING_WHITESPACE
             RESULT_VARIABLE OMNICHOIR_GIT_TIMESTAMP_RESULT)
