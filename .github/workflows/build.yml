@@ -44,6 +44,47 @@ jobs:
       SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v6
+      - name: Set reproducible source timestamp
+        shell: pwsh
+        run: |
+          $epoch = git show -s --format=%ct $env:SOURCE_COMMIT
+          if (-not $epoch -or $epoch -notmatch '^[0-9]+
+      - name: Build
+        run: cmake --build build --config Release --parallel 2
+      - name: Stage exact Windows VST3 bundle
+        shell: pwsh
+        run: |
+          $bundles = @(Get-ChildItem -Path build -Directory -Recurse -Filter 'SkellyChoir.vst3')
+          if ($bundles.Count -ne 1) { throw "Expected exactly one SkellyChoir.vst3 bundle; found $($bundles.Count)" }
+          $package = Join-Path (Get-Location) 'package'
+          New-Item -ItemType Directory -Force -Path $package | Out-Null
+          Copy-Item -LiteralPath $bundles[0].FullName -Destination $package -Recurse
+          $staged = Join-Path $package 'SkellyChoir.vst3'
+          $modules = @(Get-ChildItem -Path $staged -Recurse -File -Filter '*.vst3')
+          if ($modules.Count -ne 1) { throw "Expected exactly one VST3 module; found $($modules.Count)" }
+          $forbidden = @(Get-ChildItem -Path $staged -Recurse -File | Where-Object { $_.Extension.ToLowerInvariant() -in @('.exe', '.zip') })
+          if ($forbidden.Count -ne 0) { throw "Unexpected executable or nested archive in VST3 bundle" }
+          Write-Host "Staged bundle: $staged"
+      - name: Normalize metadata and verify Windows PE32+ bundle
+        run: python scripts/verify_windows_vst3.py --bundle package/SkellyChoir.vst3
+      - name: Validate exact staged VST3 with pluginval
+        uses: Tracktion/pluginval/validate@v2.0.0-beta3
+        with:
+          plugins: package/SkellyChoir.vst3
+          strictness-level: 5
+          pluginval-version: v2.0.0-beta3
+      - name: Write release provenance after all validation gates
+        shell: pwsh
+        run: python scripts/verify_windows_vst3.py --bundle package/SkellyChoir.vst3 --manifest package/build-info.json --source-commit "$env:SOURCE_COMMIT" --ci-commit "$env:GITHUB_SHA" --run-id "$env:GITHUB_RUN_ID" --pluginval-passed
+      - uses: actions/upload-artifact@v6
+        with:
+          name: SkellyChoir-Windows-VST3
+          path: package/
+          retention-days: 14
+          if-no-files-found: error
+) { throw "Unable to determine source commit timestamp" }
+          "SOURCE_DATE_EPOCH=$epoch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "SOURCE_DATE_EPOCH=$epoch"
       - name: Configure
         run: cmake -S . -B build -A x64
       - name: Build

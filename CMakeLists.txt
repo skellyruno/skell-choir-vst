@@ -92,6 +92,43 @@ target_link_libraries(OmniChoirFX PRIVATE
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
 
+# JUCE embeds __DATE__ and __TIME__ in juce_core_CompilationTime.cpp. Pin those
+# values to the source commit and ask MSVC's linker for reproducible PE output,
+# otherwise identical source builds produce different VST3 hashes on every run.
+if(MSVC)
+    if(NOT DEFINED ENV{SOURCE_DATE_EPOCH})
+        find_package(Git REQUIRED)
+        execute_process(
+            COMMAND "\${GIT_EXECUTABLE}" -C "\${CMAKE_SOURCE_DIR}" show -s --format=%ct HEAD
+            OUTPUT_VARIABLE OMNICHOIR_SOURCE_DATE_EPOCH
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE OMNICHOIR_GIT_TIMESTAMP_RESULT)
+        if(NOT OMNICHOIR_GIT_TIMESTAMP_RESULT EQUAL 0 OR
+           NOT OMNICHOIR_SOURCE_DATE_EPOCH MATCHES "^[0-9]+$")
+            message(FATAL_ERROR
+                "Reproducible MSVC builds require SOURCE_DATE_EPOCH or a valid Git commit timestamp")
+        endif()
+        set(ENV{SOURCE_DATE_EPOCH} "\${OMNICHOIR_SOURCE_DATE_EPOCH}")
+    endif()
+
+    string(TIMESTAMP OMNICHOIR_REPRO_DATE "%b %d %Y" UTC)
+    string(TIMESTAMP OMNICHOIR_REPRO_TIME "%H:%M:%S" UTC)
+    function(omnichoir_apply_reproducible_compile_metadata target_name)
+        if(TARGET \${target_name})
+            target_compile_options(\${target_name} PRIVATE /wd4005)
+            target_compile_definitions(\${target_name} PRIVATE
+                "__DATE__=\\"\${OMNICHOIR_REPRO_DATE}\\""
+                "__TIME__=\\"\${OMNICHOIR_REPRO_TIME}\\"")
+        endif()
+    endfunction()
+
+    omnichoir_apply_reproducible_compile_metadata(OmniChoirFX)
+    omnichoir_apply_reproducible_compile_metadata(OmniChoirFX_VST3)
+    if(TARGET OmniChoirFX_VST3)
+        target_link_options(OmniChoirFX_VST3 PRIVATE /Brepro)
+    endif()
+endif()
+
 # Optional: a headless tool that paints every tab to PNG (tools/screenshots.cpp). Off by default; the CI "screenshots" job turns it on.
 option(OMNICHOIR_BUILD_SCREENSHOTS "Also build the headless screenshot tool" OFF)
 if(OMNICHOIR_BUILD_SCREENSHOTS)
@@ -114,6 +151,9 @@ if(OMNICHOIR_BUILD_SCREENSHOTS)
         juce::juce_audio_processors
         juce::juce_gui_extra
         juce::juce_recommended_config_flags)
+    if(MSVC)
+        omnichoir_apply_reproducible_compile_metadata(OmniChoirScreenshots)
+    endif()
 endif()
 
 endif() # native tests do not need JUCE
