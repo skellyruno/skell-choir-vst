@@ -311,5 +311,34 @@ class ReleaseGateTests(unittest.TestCase):
         ])
         self.assertEqual(result, 1)
 
+    def test_preview_manifest_hashes_every_package_sidecar(self):
+        package = self.root / "package"
+        package.mkdir()
+        (package / "Install-SkellyChoirPreview.ps1").write_text("installer", encoding="utf-8")
+        (package / "WINDOWS-VST3-INSTALL.md").write_text("install guide", encoding="utf-8")
+        (package / "THIRD_PARTY_NOTICES.md").write_text("notices", encoding="utf-8")
+        manifest_path = package / "build-info.json"
+        gate.write_provenance(
+            self.bundle, manifest_path, "source-sha", "ci-sha", "12345"
+        )
+        lines = (package / "SHA256SUMS.txt").read_text(encoding="ascii").splitlines()
+        listed = {line.split("  ", 1)[1] for line in lines}
+        expected = {
+            path.relative_to(package).as_posix()
+            for path in package.rglob("*")
+            if path.is_file() and path.name != "SHA256SUMS.txt"
+        }
+        self.assertEqual(listed, expected)
+
+    def test_preview_manifest_rejects_case_colliding_sidecars(self):
+        package = self.root / "case-collision"
+        package.mkdir()
+        (package / "Readme.md").write_text("one", encoding="utf-8")
+        (package / "README.md").write_text("two", encoding="utf-8")
+        with self.assertRaises(gate.PackageError):
+            gate.write_provenance(
+                self.bundle, package / "build-info.json", "source-sha", "ci-sha", "12345"
+            )
+
 if __name__ == "__main__":
     unittest.main()

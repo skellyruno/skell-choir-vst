@@ -402,18 +402,24 @@ def write_provenance(
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_text = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
     manifest_path.write_text(manifest_text, encoding="utf-8", newline="\n")
-    sums = [
-        f"{result['binary_sha256']}  {result['binary_path']}",
-        f"{result['moduleinfo_sha256']}  {result['moduleinfo_path']}",
-        f"{digest(manifest_text.encode('utf-8'))}  {manifest_path.name}",
-    ]
-    if license_details is not None:
-        sums.append(
-            f"{license_details['license_sha256']}  {license_details['package_path']}"
-        )
-    (manifest_path.parent / "SHA256SUMS.txt").write_text(
-        "\n".join(sums) + "\n", encoding="ascii", newline="\n"
-    )
+    package_root = manifest_path.parent
+    sums_path = package_root / "SHA256SUMS.txt"
+    sums: list[str] = []
+    seen_paths: set[str] = set()
+    for path in sorted(package_root.rglob("*")):
+        if path.is_symlink():
+            raise PackageError(f"Symlink not allowed in preview package: {path.relative_to(package_root)}")
+        if not path.is_file() or path == sums_path:
+            continue
+        relative = path.relative_to(package_root).as_posix()
+        folded = relative.casefold()
+        if folded in seen_paths:
+            raise PackageError(f"Case-colliding package path: {relative}")
+        seen_paths.add(folded)
+        sums.append(f"{digest(path.read_bytes())}  {relative}")
+    if not sums:
+        raise PackageError("Preview package contains no files to checksum")
+    sums_path.write_text("\n".join(sums) + "\n", encoding="ascii", newline="\n")
     return manifest
 
 

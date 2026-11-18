@@ -18,3 +18,12 @@ Needs CI or a person. None of this has happened yet:
    - macOS: `APPLE_CERT_P12` (base64 of the Developer ID Application .p12), `APPLE_CERT_PASSWORD`, `APPLE_SIGN_IDENTITY`, and for notarization `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD` (app-specific password).
    - Windows: `WINDOWS_CERT_PFX` (base64 of the .pfx), `WINDOWS_CERT_PASSWORD`.
 8. Before tagging: re-run the full native suite, ASan/UBSan and TSan on the final commit; keep `PLUGIN_CODE`, the manufacturer code, `BUNDLE_ID` and the state type `OMNICHOIR_FX_PARAMETERS` exactly as they are.
+
+
+## Windows private-preview packaging — 2026-11-18
+
+- Baseline Windows VST3 artifact: workflow run 44173099588, artifact 14369236040, source commit 3e6634fc5c8655bc620a0907c936679a138bd4bc.
+- The release workflow now stages a per-user PowerShell 7 installer, install guide, and third-party rights inventory before writing provenance.
+- SHA256SUMS.txt covers every package file except itself, including the installer and documentation. The installer verifies exact inventory coverage before any write.
+- The installer defaults to %LOCALAPPDATA%\\Programs\\Common\\VST3, uses a verified backup and staged swap for updates, and supports explicit reversible rollback. It refuses unknown identities, changed installed bundles, path traversal, reparse points, duplicate/case-colliding checksum paths, and non-AMD64 modules.
+- This remains a private preview-only artifact. FL Studio acceptance, Quick4 current-head screenshots, real musical A/B, target-hardware CPU/latency, owner-approved licensing, attribution, vendor URL, and support email remain open.
