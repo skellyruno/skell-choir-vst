@@ -31,9 +31,12 @@ bool savePng(juce::Component& component, const juce::File& folder, const juce::S
 
     out.setPosition(0);
     out.truncate();
-    if (!png.writeImageToStream(image, out) || !out.flush())
+    const bool encoded = png.writeImageToStream(image, out);
+    out.flush();
+    if (!encoded || out.getStatus().failed())
     {
-        std::fprintf(stderr, "ERROR: PNG encoding or flush failed for %s.png\n", name.toRawUTF8());
+        std::fprintf(stderr, "ERROR: PNG encoding or flush failed for %s.png: %s\n",
+                     name.toRawUTF8(), out.getStatus().getErrorMessage().toRawUTF8());
         return false;
     }
     if (!file.existsAsFile() || file.getSize() <= 0)
