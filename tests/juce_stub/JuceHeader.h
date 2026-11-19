@@ -260,8 +260,31 @@ public:
 };
 class CriticalSection {};
 struct ScopedJuceInitialiser_GUI {};
-class OutputStream { public: virtual ~OutputStream() = default; bool setPosition(int64) { return true; } };
-class FileOutputStream : public OutputStream { public: explicit FileOutputStream(const File&) {} bool openedOk() const { return true; } bool truncate() { return true; } };
+// Minimal JUCE 8 stream/result signatures exercised by the real-editor screenshot writer.
+// This remains a type-checking stub only; it does not perform file I/O.
+class Result {
+public:
+    bool failed() const noexcept { return false; }
+    bool wasOk() const noexcept { return true; }
+    const String& getErrorMessage() const noexcept { static const String message; return message; }
+};
+class OutputStream {
+public:
+    virtual ~OutputStream() = default;
+    virtual void flush() = 0;
+    virtual bool setPosition(int64) = 0;
+    virtual int64 getPosition() = 0;
+};
+class FileOutputStream : public OutputStream {
+public:
+    explicit FileOutputStream(const File&) {}
+    bool openedOk() const noexcept { return true; }
+    Result truncate() { return {}; }
+    void flush() override {}
+    bool setPosition(int64) override { return true; }
+    int64 getPosition() override { return 0; }
+    const Result& getStatus() const noexcept { static const Result status; return status; }
+};
 class PNGImageFormat { public: bool writeImageToStream(const Image&, OutputStream&) { return true; } };
 class Thread { public: static void sleep(int) {} explicit Thread(const String&) {} virtual ~Thread() = default; virtual void run() = 0; void signalThreadShouldExit() {} bool stopThread(int) { return true; } void startThread() {} };
 }
