@@ -5,6 +5,9 @@ on:
       - 'Source/**'
       - 'tools/screenshots.cpp'
       - 'CMakeLists.txt'
+      - 'scripts/**'
+      - 'docs/**'
+      - '.github/workflows/build.yml'
       - '.github/workflows/ui-tour.yml'
   push:
     branches: [main]
@@ -38,8 +41,8 @@ jobs:
           runner=$(find build-ui -type f -name OmniChoirScreenshots -executable | head -n 1)
           test -n "$runner"
           xvfb-run -a -s '-screen 0 1920x1080x24' "$runner" ui-tour-screenshots
-          # The RC2 renderer intentionally emits 15 screen states, 3 themes,
-          # and 15 individual room scenes—not the old four-shot preview.
+          # The RC2 renderer emits 35 real editor captures across modes, tabs,
+          # tour/curtain, responsive sizes, themes, rooms, preset and key/scale.
           actual=$(find ui-tour-screenshots -type f -name '*.png' | wc -l)
           test "$actual" -eq 35 || { echo "::error::Expected 35 screenshots, got $actual"; exit 1; }
           test "$(find ui-tour-screenshots -type f -name '15-scene-*.png' | wc -l)" -eq 15
