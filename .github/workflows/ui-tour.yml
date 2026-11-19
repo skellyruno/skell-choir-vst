@@ -4,6 +4,7 @@ on:
     paths:
       - 'Source/**'
       - 'tools/screenshots.cpp'
+      - 'tests/test_ui_screenshots.py'
       - 'CMakeLists.txt'
       - 'scripts/**'
       - 'docs/**'
@@ -35,6 +36,8 @@ jobs:
         run: cmake -S . -B build-ui -G Ninja -DCMAKE_BUILD_TYPE=Release -DOMNICHOIR_BUILD_SCREENSHOTS=ON
       - name: Build SkellyChoir renderer
         run: cmake --build build-ui --target OmniChoirScreenshots --parallel 2
+      - name: Test screenshot integrity verifier
+        run: python -m unittest discover -s tests -p test_ui_screenshots.py -v
       - name: Verify room scenes, themes, selected preset and key/scale editor controls
         run: |
           set -euo pipefail
@@ -55,6 +58,22 @@ jobs:
             test -s "ui-tour-screenshots/$required" || { echo "::error::Missing or empty $required"; exit 1; }
           done
           echo "Verified all $actual real editor PNG captures"
+      - name: Verify every PNG and write screenshot provenance
+        env:
+          SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          CI_COMMIT: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref }}
+        run: |
+          python scripts/verify_ui_screenshots.py \
+            --directory ui-tour-screenshots \
+            --manifest ui-tour-screenshots/ui-screenshot-manifest.json \
+            --source-commit "$SOURCE_COMMIT" \
+            --ci-commit "$CI_COMMIT" \
+            --run-id "$RUN_ID" \
+            --event "$EVENT_NAME" \
+            --ref "$REF_NAME"
       - uses: actions/upload-artifact@v6
         if: always()
         with:

@@ -28,7 +28,10 @@ This release candidate is **Windows x64 VST3 only**. Do not add a Standalone, AU
    - The `.github/workflows/ui-tour.yml` job must run for changes to source, CMake, screenshot tooling, scripts, release documentation, or the Windows release workflow. Release-only changes must not silently skip current-source UI capture.
    - Build `OmniChoirScreenshots` against real JUCE and run it under Xvfb.
    - Require all 35 PNG captures: curtain/tour, Easy and Pro modes, tabs, solo state, room view, listen take, smallest and large sizes, three themes, 15 room scenes, selected preset, and key/scale controls.
-   - Upload the screenshot artifact from the same PR head. Inspect the actual images; file count alone is not visual acceptance.
+   - The renderer must fail immediately if any editor snapshot is invalid, PNG encoding fails, the output stream cannot flush, or the file is not persisted.
+   - Run `scripts/verify_ui_screenshots.py` against every capture. It validates PNG chunk CRCs, the complete zlib scanline stream, exact dimensions (765x534 standard, 730x500 minimum, 1300x900 large), the exact expected filename set, non-empty files, and duplicate-image hashes.
+   - Include `ui-screenshot-manifest.json` with source/CI commit, run/event/ref, byte counts, dimensions and SHA-256 for every screenshot.
+   - Upload the screenshot artifact from the same PR head. Inspect the actual images; file count and successful decoding are not visual acceptance.
 
 ## Human acceptance gates
 
