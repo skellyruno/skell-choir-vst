@@ -160,6 +160,37 @@ if(OMNICHOIR_BUILD_SCREENSHOTS)
     endif()
 endif()
 
+
+# Local Quick4: a real JUCE AudioProcessorEditor renderer for the shared
+# Skelly UI router. This is opt-in and separate from the exhaustive CI tour.
+option(OMNICHOIR_BUILD_QUICK4 "Build the local SkellyChoir Quick4 editor renderer" OFF)
+if(OMNICHOIR_BUILD_QUICK4)
+    juce_add_console_app(SkellyChoirQuick4 PRODUCT_NAME "SkellyChoirQuick4")
+    juce_generate_juce_header(SkellyChoirQuick4)
+    target_sources(SkellyChoirQuick4 PRIVATE
+        tools/quick4.cpp
+        Source/ChoirFX.cpp Source/StagedChoir.cpp Source/FormantChoir.cpp Source/ChoirDSP.cpp
+        Source/Offline/FullTakeScan.cpp Source/Offline/ExternalStemMixer.cpp Source/Offline/TakeWorker.cpp
+        Source/PluginProcessor.cpp Source/PluginEditor.cpp)
+    target_include_directories(SkellyChoirQuick4 PRIVATE Source)
+    target_compile_features(SkellyChoirQuick4 PRIVATE cxx_std_17)
+    target_compile_definitions(SkellyChoirQuick4 PRIVATE
+        SKELLYCHOIR_WITH_SKELLCORE=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(SkellyChoirQuick4 PRIVATE
+        OmniChoirFXArt
+        juce::juce_cryptography
+        SkellCore::DSP
+        SkellCore::UI
+        juce::juce_audio_utils
+        juce::juce_audio_processors
+        juce::juce_gui_extra
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+    if(MSVC)
+        omnichoir_apply_reproducible_compile_metadata(SkellyChoirQuick4)
+    endif()
+endif()
+
 endif() # native tests do not need JUCE
 if(OMNICHOIR_BUILD_TESTS)
     enable_testing()
