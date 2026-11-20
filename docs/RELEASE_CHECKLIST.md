@@ -24,7 +24,12 @@ This release candidate is **Windows x64 VST3 only**. Do not add a Standalone, AU
    - Run the real package with `-WhatIf` and prove that neither the destination nor backup directory is created.
    - The installer defaults to the per-user `%LOCALAPPDATA%\\Programs\\Common\\VST3` directory. It must not require administrator elevation or modify registry entries, other plugins, presets, DAW projects or host state.
 
-5. **Real editor screenshot workflow**
+5. **Installable artifact confidentiality**
+   - Gate the `SkellyChoir-Windows-VST3` upload on `github.repository_visibility == 'private'`.
+   - Public-repository runs must still build, run native tests, verify the AMD64 PE32+ bundle, run pluginval and installer self-tests, but must not upload the VST3 bundle, installer or provenance as an Actions artifact.
+   - UI screenshot artifacts are non-installable QA evidence and remain separate.
+
+6. **Real editor screenshot workflow**
    - The `.github/workflows/ui-tour.yml` job must run for changes to source, CMake, screenshot tooling, scripts, release documentation, or the Windows release workflow. Release-only changes must not silently skip current-source UI capture.
    - Build `OmniChoirScreenshots` against real JUCE and run it under Xvfb.
    - Require all 35 PNG captures: curtain/tour, Easy and Pro modes, tabs, solo state, room view, listen take, smallest and large sizes, three themes, 15 room scenes, selected preset, and key/scale controls.

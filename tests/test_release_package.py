@@ -340,5 +340,16 @@ class ReleaseGateTests(unittest.TestCase):
                 self.bundle, package / "build-info.json", "source-sha", "ci-sha", "12345"
             )
 
+    def test_public_repository_withholds_installable_preview_artifact(self):
+        workflow_path = pathlib.Path(__file__).resolve().parents[1] / ".github" / "workflows" / "build.yml"
+        workflow = workflow_path.read_text(encoding="utf-8")
+        marker = "      - uses: actions/upload-artifact@v6\n"
+        self.assertEqual(workflow.count(marker), 1)
+        upload_step = workflow.split(marker, 1)[1].split("\n      - ", 1)[0]
+        expected = "        if: " + chr(36) + "{{ github.repository_visibility == 'private' }}"
+        self.assertIn(expected, upload_step)
+        self.assertIn("name: SkellyChoir-Windows-VST3", upload_step)
+        self.assertIn("path: package/", upload_step)
+
 if __name__ == "__main__":
     unittest.main()

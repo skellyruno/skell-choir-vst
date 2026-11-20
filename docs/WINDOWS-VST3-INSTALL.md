@@ -39,3 +39,4 @@ Rollback restores only the immediately previous verified SkellyChoir bundle. The
 - The installer is not code-signed and does not enable automatic updates.
 - FL Studio scan/load, old-project compatibility, real musical A/B, owner listening approval, target-hardware CPU/latency, final attribution, and commercial licensing remain separate release gates.
 - Do not distribute this preview publicly or treat a passing CI run as FL Studio acceptance.
+- This repository is public. Its Windows workflow now uploads the installable VST3 package only when repository visibility is `private`; public runs continue validation but withhold the package, installer and provenance artifact. Any owner-test copy must be transferred through a private owner-controlled channel. Pre-existing public workflow artifacts are not made private by this rule.
