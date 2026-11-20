@@ -1,4 +1,4 @@
-# SkellyChoir 0.9.0 (formerly OmniChoir FX) — live vocal choirification + full-take SATB scan + external singer tools
+# SkellyChoir 0.9.0 
 
 **VST3 effect source project — not a compiled plugin.** This is an upgrade of the OmniChoir FX starter using your original JS stage, worklet, renderer, latest `omnichoir-demo.js`, the five photographic references, and the screenshot of the larger GUI. The original JS files are kept verbatim in `Reference/` for continued native porting. The browser `AudioWorklet` itself cannot execute as a native VST3 audio callback; the relevant stage/mic/group interaction patterns and acoustic concepts are translated into C++.
 
