@@ -23,8 +23,8 @@ int main(int argc, char** argv)
     CHECK(has(branding::kSubtitle, "LISTEN & RENDER") && !has(branding::kSubtitle, "SCAN"), "the subtitle must say LISTEN & RENDER");
     for (const char* s : { branding::kProductName, branding::kTitle, branding::kSubtitle, branding::kSettingsFolder })
         for (const char* c = s; *c; ++c) CHECK((unsigned char) *c < 128, "branding strings must be plain ASCII (juce::String asserts otherwise): %s", s);
-    CHECK(has(ci, "name: SkellyChoir-${{ runner.os }}-VST3") && has(ci, "path: SkellyChoir-${{ runner.os }}-VST3.zip") && has(ci, "DestinationPath SkellyChoir-${{ runner.os }}-VST3.zip") && !has(ci, "OmniChoirFX-${{"),
-          "CI artifact names must use the new name in the zip, the upload name and the upload path");
+    CHECK(has(ci, "name: SkellyChoir-Windows-VST3") && has(ci, "path: package/") && has(ci, "package/SkellyChoir.vst3") && !has(ci, "SkellyChoir-${{ runner.os }}-VST3.zip") && !has(ci, "DestinationPath") && !has(ci, "OmniChoirFX-${{"),
+          "CI must upload the direct SkellyChoir.vst3 bundle and provenance, without a nested product ZIP");
 
     // 2. what must NOT change, or old sessions stop loading
     CHECK(has(cmake, "PLUGIN_CODE OmF2") && has(cmake, "PLUGIN_MANUFACTURER_CODE SkAu") && has(cmake, "BUNDLE_ID \"audio.skell.omnichoirfx\""),

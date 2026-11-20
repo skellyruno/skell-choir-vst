@@ -11,13 +11,44 @@
 #include <cstdio>
 
 namespace {
-void savePng(juce::Component& component, const juce::File& folder, const juce::String& name)
+bool savePng(juce::Component& component, const juce::File& folder, const juce::String& name)
 {
     const auto image = component.createComponentSnapshot(component.getLocalBounds(), true, 1.0f);
+    if (!image.isValid() || image.getWidth() <= 0 || image.getHeight() <= 0)
+    {
+        std::fprintf(stderr, "ERROR: empty editor snapshot for %s.png\n", name.toRawUTF8());
+        return false;
+    }
+
     juce::PNGImageFormat png;
-    juce::FileOutputStream out(folder.getChildFile(name + ".png"));
-    if (out.openedOk()) { out.setPosition(0); out.truncate(); png.writeImageToStream(image, out); std::printf("saved %s.png (%d x %d)\n", name.toRawUTF8(), image.getWidth(), image.getHeight()); }
-    else std::printf("could not write %s.png\n", name.toRawUTF8());
+    const auto file = folder.getChildFile(name + ".png");
+    juce::FileOutputStream out(file);
+    if (!out.openedOk())
+    {
+        std::fprintf(stderr, "ERROR: could not open %s.png for writing\n", name.toRawUTF8());
+        return false;
+    }
+
+    out.setPosition(0);
+    out.truncate();
+    const bool encoded = png.writeImageToStream(image, out);
+    out.flush(); // JUCE's FileOutputStream::flush() returns void.
+    const auto expectedBytes = out.getPosition();
+    const auto persistedBytes = file.getSize();
+    if (!encoded || out.getStatus().failed() || !file.existsAsFile()
+        || persistedBytes <= 0 || persistedBytes != expectedBytes)
+    {
+        std::fprintf(stderr,
+                     "ERROR: PNG output incomplete for %s.png (encoded=%d, expected=%lld, persisted=%lld, status=%s)\n",
+                     name.toRawUTF8(), encoded ? 1 : 0,
+                     static_cast<long long>(expectedBytes),
+                     static_cast<long long>(persistedBytes),
+                     out.getStatus().getErrorMessage().toRawUTF8());
+        return false;
+    }
+
+    std::printf("saved %s.png (%d x %d)\n", name.toRawUTF8(), image.getWidth(), image.getHeight());
+    return true;
 }
 
 // a sung melody with vibrato: C E G E A F D C, 0.55 s each
@@ -56,25 +87,26 @@ int main(int argc, char** argv)
     auto* editor = dynamic_cast<OmniChoirAudioProcessorEditor*>(base.get());
     if (editor == nullptr) { std::printf("the processor did not create its editor\n"); return 1; }
     editor->setSize(765, 534);
+    const auto save = [&](const juce::String& name) { return savePng(*editor, folder, name); };
 
     const std::vector<int> melody { 60, 64, 67, 64, 69, 65, 62, 60 };
     feed(processor, melody, 2.0);                       // a little singing, so the stage glows and the meters move
 
-    editor->showCurtainForScreenshot(1200.f);               savePng(*editor, folder, "00a-curtain-closed");      // every open starts on the curtain
-    editor->showCurtainForScreenshot(curtain::kHoldMs + curtain::kOpenMs * .5f);  savePng(*editor, folder, "00b-curtain-parting");
-    editor->showTourForScreenshot();  savePng(*editor, folder, "01-first-run-tour");      // a fresh install shows the tour once the curtain has parted
+    editor->showCurtainForScreenshot(1200.f);               if (!save("00a-curtain-closed")) return 2;      // every open starts on the curtain
+    editor->showCurtainForScreenshot(curtain::kHoldMs + curtain::kOpenMs * .5f);  if (!save("00b-curtain-parting")) return 2;
+    editor->showTourForScreenshot();  if (!save("01-first-run-tour")) return 2;      // a fresh install shows the tour once the curtain has parted
     editor->dismissTour();
-    editor->showForScreenshot(false, 0);  savePng(*editor, folder, "02-easy-mode");
-    editor->showForScreenshot(true, 0);   savePng(*editor, folder, "03-pro-main");
+    editor->showForScreenshot(false, 0);  if (!save("02-easy-mode")) return 2;
+    editor->showForScreenshot(true, 0);   if (!save("03-pro-main")) return 2;
     if (auto* mute = processor.parameters.getParameter("sectionState3")) mute->setValueNotifyingHost(mute->convertTo0to1(2.f));
     if (auto* solo = processor.parameters.getParameter("sectionState0")) solo->setValueNotifyingHost(solo->convertTo0to1(1.f));
-    editor->showForScreenshot(true, 0);   savePng(*editor, folder, "04-pro-main-solo-soprano");
+    editor->showForScreenshot(true, 0);   if (!save("04-pro-main-solo-soprano")) return 2;
     if (auto* mute = processor.parameters.getParameter("sectionState3")) mute->setValueNotifyingHost(0.f);
     if (auto* solo = processor.parameters.getParameter("sectionState0")) solo->setValueNotifyingHost(0.f);
-    editor->showForScreenshot(true, 1);   savePng(*editor, folder, "05-room");
-    editor->showForScreenshot(true, 2);   savePng(*editor, folder, "06-voice");
-    editor->showForScreenshot(true, 3);   savePng(*editor, folder, "07-follow");
-    editor->showForScreenshot(true, 4);   savePng(*editor, folder, "08-listen-empty");
+    editor->showForScreenshot(true, 1);   if (!save("05-room")) return 2;
+    editor->showForScreenshot(true, 2);   if (!save("06-voice")) return 2;
+    editor->showForScreenshot(true, 3);   if (!save("07-follow")) return 2;
+    editor->showForScreenshot(true, 4);   if (!save("08-listen-empty")) return 2;
 
     // a take: key of C major, listen to the melody, analyse, then show the piano roll
     if (auto* scale = processor.parameters.getParameter("scale")) scale->setValueNotifyingHost(scale->convertTo0to1(1.f));
@@ -83,12 +115,12 @@ int main(int argc, char** argv)
     processor.stopListening();
     for (int i = 0; i < 500 && processor.listenSession().state() != choir::ListenSession::Ready; ++i) juce::Thread::sleep(20);
     processor.setMode(1);
-    editor->showForScreenshot(true, 4);   savePng(*editor, folder, "09-listen-take");
-    editor->showForScreenshot(true, 5);   savePng(*editor, folder, "10-take-file");
-    editor->showForScreenshot(true, 6);   savePng(*editor, folder, "11-stems");
+    editor->showForScreenshot(true, 4);   if (!save("09-listen-take")) return 2;
+    editor->showForScreenshot(true, 5);   if (!save("10-take-file")) return 2;
+    editor->showForScreenshot(true, 6);   if (!save("11-stems")) return 2;
     editor->showForScreenshot(true, 0);
-    editor->setSize(730, 500);            savePng(*editor, folder, "12-smallest-window");
-    editor->setSize(1300, 900);           savePng(*editor, folder, "13-large-window");
+    editor->setSize(730, 500);            if (!save("12-smallest-window")) return 2;
+    editor->setSize(1300, 900);           if (!save("13-large-window")) return 2;
 
     // every theme on the main page, then every stage scene (the picture follows the stage preset; wait out the 400 ms crossfade)
     editor->setSize(765, 534);
@@ -97,7 +129,7 @@ int main(int argc, char** argv)
     {
         editor->showThemeForScreenshot(i);
         juce::String name = theme::get(i).name; name = name.replaceCharacter(' ', '-').toLowerCase();
-        savePng(*editor, folder, "14-theme-" + name);
+        if (!save("14-theme-" + name)) return 2;
     }
     editor->showThemeForScreenshot(0);
     for (int i = 0; i < scenes::kNumScenes; ++i)
@@ -106,7 +138,7 @@ int main(int argc, char** argv)
         editor->createComponentSnapshot(editor->getLocalBounds(), true, 1.0f);   // the first paint starts the fade...
         juce::Thread::sleep(scenes::kFadeMs + 80);                               // ...so let it finish before the picture is taken
         juce::String name = scenes::kScenes[i].presetName; name = name.replaceCharacter(' ', '-').toLowerCase();
-        savePng(*editor, folder, "15-scene-" + juce::String(i) + "-" + name);
+        if (!save("15-scene-" + juce::String(i) + "-" + name)) return 2;
     }
     // Exercise the actual JUCE editor, not only string checks: preset display
     // and key changes must work with SCALE still in its off state.
@@ -116,7 +148,7 @@ int main(int argc, char** argv)
     if (processor.activeStyleName() != juce::String(choir::kStylePresets[6].name)) {
         std::fprintf(stderr,"preset selection failed to retain its name\n"); return 4;
     }
-    savePng(*editor, folder, "16-selected-preset");
+    if (!save("16-selected-preset")) return 2;
     editor->showKeyScaleForScreenshot(0,0);
     editor->showKeyScaleForScreenshot(6,0);
     if ((int)processor.parameters.getRawParameterValue("keyRoot")->load()!=6
@@ -127,7 +159,7 @@ int main(int argc, char** argv)
     if ((int)processor.parameters.getRawParameterValue("scale")->load()!=1) {
         std::fprintf(stderr,"scale selection failed\n"); return 6;
     }
-    savePng(*editor, folder, "17-key-scale-selected");
+    if (!save("17-key-scale-selected")) return 2;
     std::printf("done: %s\n", folder.getFullPathName().toRawUTF8());
     return 0;
 }

@@ -144,3 +144,31 @@ These verify silence numerical safety, pitch detection, stage stereo movement, 4
 The sound is more varied than the previous two-layer granular harmonizer, but it **will not automatically sound like a high-end 64-person real choir**. A production instrument would need licensed multisinger voice recordings or a high-quality neural/PSOLA-style voice conversion engine, better transient handling, robust chord/harmony transcription, singer breath and phoneme variation, spectral high-quality formant models, CPU profiling, fixed host latency reporting, audio click/dropout QA, and real Windows/macOS DAW integration testing. The supplied JS worklet plays *pre-rendered choir samples*. These samples and their manifest are not in the uploads, so they cannot simply be reused here for the exact original demo sound.
 
 This package provides a substantial inspectable **source prototype**, verified native DSP and end-to-end CLI scan/edit/render, rather than an untested VST3 falsely advertised as production-ready.
+
+## Commercial metadata gate
+
+The normal GitHub Actions artifact is deliberately **preview-only**. The current
+module metadata has no vendor URL or support email, and the repository has no
+owner-approved root LICENSE or COPYING file. The release verifier records
+those blockers in build-info.json; it does not invent contact details or
+write a license on the owner's behalf.
+
+For a future owner-authorized metadata check, supply the approved contact fields
+in Factory Info.URL and Factory Info.E-Mail, add the actual owner-approved
+LICENSE or COPYING file, and explicitly run the verifier with
+--require-commercial-metadata --license-file LICENSE --owner-approved-license.
+That mode copies the supplied license into the package and hashes it in
+SHA256SUMS.txt. The flag is an explicit owner assertion, not legal advice.
+Even when this metadata gate passes, the manifest remains preview-only until
+FL Studio compatibility, real audio A/B, target-hardware CPU/latency, and
+third-party license/attribution review are independently accepted. It does not
+publish or authorize distribution.
+
+## Reproducible Windows VST3 builds
+
+CMake derives SOURCE_DATE_EPOCH from the SOURCE_COMMIT environment variable
+(PR head SHA in CI) or the local Git HEAD when the variable is absent. On MSVC,
+CMake pins JUCE's embedded compilation date/time to that source epoch and
+enables the linker's /Brepro option for the VST3 module. The artifact records
+both the source commit and CI merge commit; compare module hashes across
+repeated builds before treating the output as proven bit-for-bit reproducible.

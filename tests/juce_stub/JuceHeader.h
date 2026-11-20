@@ -260,8 +260,9 @@ public:
 };
 class CriticalSection {};
 struct ScopedJuceInitialiser_GUI {};
+class Result { public: bool failed() const { return false; } String getErrorMessage() const { return {}; } };
 class OutputStream { public: virtual ~OutputStream() = default; bool setPosition(int64) { return true; } };
-class FileOutputStream : public OutputStream { public: explicit FileOutputStream(const File&) {} bool openedOk() const { return true; } bool truncate() { return true; } };
+class FileOutputStream : public OutputStream { public: explicit FileOutputStream(const File&) {} bool openedOk() const { return true; } Result truncate() { return {}; } void flush() {} int64 getPosition() { return 0; } const Result& getStatus() const { static const Result result; return result; } };
 class PNGImageFormat { public: bool writeImageToStream(const Image&, OutputStream&) { return true; } };
 class Thread { public: static void sleep(int) {} explicit Thread(const String&) {} virtual ~Thread() = default; virtual void run() = 0; void signalThreadShouldExit() {} bool stopThread(int) { return true; } void startThread() {} };
 }
