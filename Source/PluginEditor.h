@@ -30,6 +30,7 @@ public:
     void mouseMove(const juce::MouseEvent&) override;
     void mouseExit(const juce::MouseEvent&) override;
     void mouseDoubleClick(const juce::MouseEvent&) override;
+    void showRoomMenuForScreenshot() { showRoomMenu(); } // trigger the same native popup without fabricating menu UI
 private:
     OmniChoirAudioProcessor& processor;
     std::array<juce::Image,scenes::kNumScenes> sceneImages;   // loaded on first use; Default and Cathedral share one picture
@@ -156,6 +157,7 @@ public:
     void showCurtainForScreenshot(float ms) {if(curtain==nullptr) startCurtain();curtain->freezeAt(ms);}
     void showPresetForScreenshot(int index) {processor.applyStyle(index);refreshPresetSelection();}
     void showKeyScaleForScreenshot(int key,int scale) {keyBox.setSelectedId(key+1,juce::sendNotificationSync);scaleBox.setSelectedId(scale+1,juce::sendNotificationSync);}
+     void showRoomMenuForScreenshot() { stage.showRoomMenuForScreenshot(); } // opens the real native Rooms / Position PopupMenu
 private:
     enum class Kind { Knob, Fader, Side };
     enum Page { pageMain=0, pageRoom, pageVoice, pageFollow, pageListen, pageTake, pageStems, numPages };
