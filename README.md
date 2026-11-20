@@ -22,7 +22,7 @@ What changed in 0.9 (rename, themes, skull button, independent mic and lead) and
 AUTO LEVEL keeps the loudness steady as CHOIR MIX moves; one CHOIR SIZE knob and an Easy mode (just a few big controls); six one-click STYLES and SURPRISE ME;
 **MIDI Chord** mode (hold keys, the choir sings that chord from your voice); solo/mute by clicking a section's name on the stage; a livelier stage; three built-in
 rooms (synthetic); a somewhat steadier pitch tracker. Measurements, what is and is not verified, and the known limits: **`docs/V0_7_CHANGELOG.md`**.
-The JUCE layer is still unbuilt against real JUCE and nothing has been listened to: the CI `plugin` job is the first real compile.
+The historical 0.7 stage predates the current real-JUCE Windows build, native screenshot renderer, and 0.9 RC2 UI.
 
 ## v0.6.1 — level fix, CHOIR LEVEL, and a real test suite
 
@@ -89,9 +89,11 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --parallel 2
 ```
 
-For the current repository, use the GitHub Actions **Build SkellyChoir Windows VST3** workflow for Windows VST3 artifacts. Local native tests run with `bash scripts/run_tests.sh`; actual FL Studio sound and UI acceptance still require testing.
+For the current repository, the GitHub Actions **Build SkellyChoir Windows VST3** workflow compiles the Windows x64 VST3, checks the AMD64 module, runs pluginval at strictness 5, and tests the preview installer. **This repository is public, so the workflow deliberately skips uploading the installable VST3 ZIP.** The upload step is enabled only when repository visibility is private; this is a distribution safeguard, not a build failure. An owner-test binary must be delivered through a private owner-controlled repository or transfer channel.
 
-The plugin is an **audio effect**, not an instrument. It can be placed on a vocal track in REAPER, Ableton, FL Studio, Cubase, etc. **VST3 does not run in Logic Pro; AU support would need to be added.** The JUCE plugin **has not been compiled or host-tested in this sandbox** because this environment cannot reach the JUCE source repository. Source-level validation and native DSP tests are separate from actual VST3 host validation.
+The opt-in local JUCE screenshot target is `SkellyChoirQuick4` (`-DOMNICHOIR_BUILD_QUICK4=ON`); it captures the real editor, including the native Rooms / Position popup. See `docs/LOCAL_UI_SCREENSHOTS.md`. Local native tests run with `bash scripts/run_tests.sh`; actual FL Studio routing, automation, save/reopen, and real musical A/B acceptance remain separate tests.
+
+The plugin is an **audio effect**, not an instrument. It can be placed on a vocal track in REAPER, Ableton, FL Studio, Cubase, etc. **VST3 does not run in Logic Pro; AU support would need to be added.** The current source has passed a Windows x64 VST3 build, strict metadata/PE32+ validation, pluginval strictness 5, package-installer tests, and real-JUCE screenshot builds in CI. The public repository withholds the installable binary artifact; FL Studio scan/load, real routing/automation, save/reopen and listening acceptance remain unverified. Source-level and automated CI validation are not substitutes for DAW acceptance.
 
 ## Everyday use
 
@@ -119,7 +121,7 @@ The portable CLI is intentionally limited to **little-endian mono/stereo PCM16 o
 
 ## Test results and audio comparison
 
-**Tested natively (no JUCE)** - 29 checks, one command: `scripts/run_tests.sh` (see `docs/BUILD_AND_TEST.md`).
+**Tested natively (no JUCE)** - 41 checks, one command: `scripts/run_tests.sh` (see `docs/BUILD_AND_TEST.md`). The current Windows CI also runs 29 release-package regression tests.
 
 These verify silence numerical safety, pitch detection, stage stereo movement, 44.1/48/96-kHz processing, 4-second scan behavior, full-note score segmentation, SATB editing and finite export-DSP samples. The included CLI was also used to scan a 10-second example into 12 detected notes and render the resulting full-length stereo WAV in `Preview/`.
 
