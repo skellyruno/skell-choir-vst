@@ -62,6 +62,16 @@ int main()
         c.noteOn(55); c.sustain(true); c.noteOff(55); c.noteOn(55); c.noteOff(55); c.sustain(false); CHECK(!c.any(), "a re-struck pedalled key does not stick");
         c.noteOn(60); c.allOff(); CHECK(!c.any(), "all notes off");
         c.noteOn(-5); c.noteOn(200); CHECK(!c.any(), "out-of-range notes are ignored");
+        // Some hosts emit unmatched or duplicate Note Off events on transport and MIDI reset.
+        // Sustain must never turn such events into notes that the player did not press.
+        c.sustain(true); c.noteOff(62);
+        CHECK(!c.any(), "unmatched note-off must not create a sustained ghost note");
+        c.noteOn(60); c.noteOff(60); c.noteOff(62); c.noteOff(60);
+        CHECK(c.any() && c.sections()[0] == 60 && c.sections()[3] == 60,
+              "valid sustained key must survive duplicate and unrelated note-offs");
+        c.allOff(); c.noteOff(65);
+        CHECK(!c.any(), "all-notes-off followed by unmatched note-off must stay silent");
+        c.sustain(false);
         std::printf("[1] chord assignment (1..6 keys) and the sustain pedal behave\n");
     }
 
