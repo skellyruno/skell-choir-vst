@@ -42,6 +42,7 @@ jobs:
         run: python -m unittest discover -s tests -p test_release_package.py -v
 
   build:
+    needs: native-tests
     runs-on: windows-latest
     timeout-minutes: 45
     env:
@@ -97,13 +98,8 @@ jobs:
           & package/Install-SkellyChoirPreview.ps1 -PackageRoot package -Destination $whatIfDestination -BackupRoot $whatIfBackup -WhatIf
           if (Test-Path -LiteralPath $whatIfDestination) { throw 'WhatIf unexpectedly created the VST3 destination' }
           if (Test-Path -LiteralPath $whatIfBackup) { throw 'WhatIf unexpectedly created the backup directory' }
-      - name: Confirm public repository preview artifact withholding
-        if: ${{ github.repository_visibility == 'public' }}
-        shell: pwsh
-        run: |
-          Write-Host "Public repository: VST3 package validation passed; installable preview artifact is intentionally withheld."
+      # Owner-authorized testing downloads (including public repository artifacts).
       - uses: actions/upload-artifact@v6
-        if: ${{ github.repository_visibility == 'private' }}
         with:
           name: SkellyChoir-Windows-VST3
           path: package/

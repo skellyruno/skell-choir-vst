@@ -340,14 +340,21 @@ class ReleaseGateTests(unittest.TestCase):
                 self.bundle, package / "build-info.json", "source-sha", "ci-sha", "12345"
             )
 
-    def test_public_repository_withholds_installable_preview_artifact(self):
+    def test_verified_preview_artifact_is_downloadable(self):
         workflow_path = pathlib.Path(__file__).resolve().parents[1] / ".github" / "workflows" / "build.yml"
         workflow = workflow_path.read_text(encoding="utf-8")
         marker = "      - uses: actions/upload-artifact@v6\n"
         self.assertEqual(workflow.count(marker), 1)
         upload_step = workflow.split(marker, 1)[1].split("\n      - ", 1)[0]
-        expected = "        if: " + chr(36) + "{{ github.repository_visibility == 'private' }}"
-        self.assertIn(expected, upload_step)
+        self.assertNotIn("github.repository_visibility", workflow)
+        self.assertIn("needs: native-tests", workflow)
+        self.assertNotIn("if: always()", upload_step)
+        self.assertIn("if-no-files-found: error", upload_step)
+        for gate in ("Normalize metadata and verify Windows PE32+ bundle",
+                     "Validate exact staged VST3 with pluginval",
+                     "Write release provenance after all validation gates",
+                     "Test private-preview installer, update and rollback"):
+            self.assertLess(workflow.index(gate), workflow.index(marker))
         self.assertIn("name: SkellyChoir-Windows-VST3", upload_step)
         self.assertIn("path: package/", upload_step)
 

@@ -14,8 +14,9 @@ public:
     void noteOff(int note)
     {
         if (!valid(note)) return;
+        const bool wasDown = down.test((size_t) note);
         down.reset((size_t) note);
-        if (pedal) sustained.set((size_t) note);     // the pedal keeps it sounding
+        if (pedal && wasDown) sustained.set((size_t) note); // sustain only notes that were actually held
     }
     void sustain(bool on)
     {
