@@ -134,14 +134,19 @@ void GrainVoice::processPair(const std::vector<float>& original,
 
 // ------------------------------------------------------------------------------------------------ SyncVoice
 namespace {
-float readBack(const std::vector<float>& data,int write,double samplesBack) {
-    const int size=(int)data.size();
+struct BackPosition { int i,j; float f; };
+BackPosition backPosition(int size,int write,double samplesBack) {
     double pos=(double)write-samplesBack;
     while(pos<0) pos+=size;
     while(pos>=size) pos-=size;
-    const int i=(int)pos, j=(i+1)%size;
-    const float f=(float)(pos-i);
-    return data[(size_t)i]*(1-f)+data[(size_t)j]*f;
+    const int i=(int)pos, j=(i+1==size?0:i+1);
+    return {i,j,(float)(pos-i)};
+}
+float readAt(const std::vector<float>& data,BackPosition p) {
+    return data[(size_t)p.i]*(1-p.f)+data[(size_t)p.j]*p.f;
+}
+float readBack(const std::vector<float>& data,int write,double samplesBack) {
+    return readAt(data,backPosition((int)data.size(),write,samplesBack));
 }
 }
 
@@ -227,11 +232,18 @@ void SyncVoice::processPair(const std::vector<float>& original,const std::vector
         const float th=.5f*pi*fade, norm=1.f/std::sqrt(1.f+rho*std::sin(2.f*th));   // P = g1^2 + g2^2 + 2 g1 g2 rho = 1
         const float g1=std::cos(th)*norm, g2=std::sin(th)*norm;
         oldDelay=std::max(1.0,std::min(limit,oldDelay));
-        raw=g1*readBack(original,write,baseDelay+oldDelay)+g2*readBack(original,write,baseDelay+delay);
-        exc=g1*readBack(excitation,write,baseDelay+oldDelay)+g2*readBack(excitation,write,baseDelay+delay);
+        const auto oldPos=backPosition((int)original.size(),write,baseDelay+oldDelay);
+        const auto newPos=backPosition((int)original.size(),write,baseDelay+delay);
+        raw=g1*readAt(original,oldPos)+g2*readAt(original,newPos);
+        // The engine prepares matching raw/excitation histories.
+        if (excitation.size()==original.size())
+            exc=g1*readAt(excitation,oldPos)+g2*readAt(excitation,newPos);
+        else
+            exc=g1*readBack(excitation,write,baseDelay+oldDelay)+g2*readBack(excitation,write,baseDelay+delay);
     } else {
-        raw=readBack(original,write,baseDelay+delay);
-        exc=readBack(excitation,write,baseDelay+delay);
+        const auto pos=backPosition((int)original.size(),write,baseDelay+delay);
+        raw=readAt(original,pos);
+        exc=excitation.size()==original.size()?readAt(excitation,pos):readBack(excitation,write,baseDelay+delay);
     }
 }
 
@@ -244,11 +256,18 @@ void ChoirEffect::updateLPC() {
     constexpr int frame=720;
     float corr[lpcOrder+1] {};
     const int size=(int)inputHistory.size();
+    // Copy the past window once; the eleven autocorrelation passes then walk
+    // contiguous samples in the original summation order, without ring modulo.
+    float past[frame+lpcOrder];
+    int read=write;
+    for (int n=0;n<frame+lpcOrder;++n) {
+        if (--read<0) read=size-1;
+        past[n]=inputHistory[(size_t)read];
+    }
     for(int lag=0;lag<=lpcOrder;++lag) {
         double sum=0;
         for(int n=0;n<frame;++n) {
-            const float a=inputHistory[(size_t)((write-1-n+size)%size)];
-            const float b=inputHistory[(size_t)((write-1-n-lag+size)%size)];
+            const float a=past[n], b=past[n+lag];
             sum+=(double)a*b;
         }
         corr[lag]=(float)(sum/frame);
@@ -483,9 +502,10 @@ void ChoirEffect::processVoices(float mono,float* voicesOut) {
     if(++lpcCounter>=2048) {lpcCounter=0;updateLPC();}
     float excitation=pitchedInput;
     const int historySize=(int)inputHistory.size();
+    int excitationRead=write;
     for(int j=0;j<lpcOrder;++j) {
-        const int idx=(write-j-1+historySize)%historySize;
-        excitation+=lpc[(size_t)j]*inputHistory[(size_t)idx];
+        if (--excitationRead<0) excitationRead=historySize-1;
+        excitation+=lpc[(size_t)j]*inputHistory[(size_t)excitationRead];
     }
     excitation=bound(excitation,-2.f,2.f);
     inputHistory[(size_t)write]=pitchedInput;
@@ -569,9 +589,10 @@ void ChoirEffect::processVoices(float mono,float* voicesOut) {
                 else { x=xs; exc=es; }
             }
             float formed=exc;
+            int formantRead=formantWrite;
             for(int tap=0;tap<lpcOrder;++tap) {
-                const int idx=(formantWrite-tap-1+lpcOrder)%lpcOrder;
-                formed-=lpc[(size_t)tap]*formantState[(size_t)k][(size_t)idx];
+                if (--formantRead<0) formantRead=lpcOrder-1;
+                formed-=lpc[(size_t)tap]*formantState[(size_t)k][(size_t)formantRead];
             }
             formed=bound(formed,-1.6f,1.6f);
             formantState[(size_t)k][(size_t)formantWrite]=formed;

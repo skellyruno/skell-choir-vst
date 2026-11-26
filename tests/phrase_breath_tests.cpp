@@ -129,7 +129,7 @@ int main(int argc, char** argv)
         const std::string proc = slurp(root + "/Source/PluginProcessor.cpp"), ed = slurp(root + "/Source/PluginEditor.cpp");
         CHECK(proc.find("addFloat(layout,\"phraseBreath\",\"Phrase Breath\",0.f,1.f,.001f,0.f)") != std::string::npos, "phraseBreath must default to 0");
         CHECK(proc.find("p.phraseBreath=read(raw.phraseBreath)") != std::string::npos, "the parameter does not reach the engine");
-        CHECK(ed.find("addKnob(\"PHRASE BREATH\",\"phraseBreath\"") != std::string::npos, "no knob");
+        CHECK(ed.find("addKnob(\"INHALE\",\"phraseBreath\"") != std::string::npos, "no knob");
         CHECK(!FXParams().phraseBreath, "phraseBreath must default to off");
         const auto a = proc.find("void OmniChoirAudioProcessor::resetSpreads"), b = proc.find("void OmniChoirAudioProcessor::applyStack");
         CHECK(a != std::string::npos && b > a, "resetSpreads is missing");

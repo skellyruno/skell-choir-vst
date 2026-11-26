@@ -47,3 +47,12 @@ Compared all 19 non-active branch tips against main 1e979a81593ec20ba8810258d2ac
 ## Merge gates
 
 Previously acac8ac Windows/native and UI CI passed. New changes require exact-head native, Windows VST3/pluginval, visual checks and review. Keep main at verified baseline until then. No commercial release authorization.
+
+
+## CPU and formant-path follow-up
+
+CI 45819327472 completed with 46 passes and one failure. The full pitch-sync, real-vocal, balance, formant, section-tone, stage-spread and allocation suites passed. The phrase-breath DSP assertions passed but the UI source contract still expected the retired label PHRASE BREATH; update it to INHALE without weakening the parameter/default/reset assertions.
+
+Optimize LPC analysis by copying one contiguous past window instead of indexing the ring for every correlation tap; keep accumulation order. Replace modulo in the excitation and per-singer LPC synthesis loops with wrapped indices. Share interpolation positions between raw and excitation histories in Pitch Sync (fall back for differing sizes). No parameter IDs, controls, defaults, timing, synthesis coefficients or playback delays change. No heap allocations added.
+
+Local comparison on a reconstructed candidate (not byte-identical to exact GitHub head): 3 seconds of existing vocal_raw_9s.wav, 16 singer outputs, 256-sample blocks, Linux g++ -O2, three repetitions per configuration. All six before/after sample-bit stream hashes matched, at 44.1 and 96 kHz in legacy, Pitch Sync and Pitch Sync + 85% spread + 35% blend configurations. Median of per-run mean processing times (including sample hashing): 44.1 kHz legacy 304.122 -> 286.113 us, sync 322.746 -> 293.303 us, combined 700.417 -> 643.113 us; 96 kHz legacy 279.255 -> 249.362 us, sync 357.670 -> 340.079 us, combined 755.424 -> 665.388 us. No deadline misses in the optimized local comparison; baseline combined at 96 kHz had 47 across three runs. Scheduling noise makes max/late timing non-deterministic. These are voice-core timings, not host callback/whole plugin or Windows measurements. Local phrase-breath suite passed after label contract correction, including all DSP checks. Exact-head CI remains required. Real UI recapture and audition still required; no claims of sound superiority from performance-only changes.
