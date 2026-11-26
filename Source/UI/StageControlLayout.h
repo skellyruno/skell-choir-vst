@@ -15,6 +15,16 @@ inline Rect beside(float leftTop,float rightTop,float topRowY,float figureSize,
                                 plotTop+30.f,plotBottom-kRowStep-kButton-3.f);
     return {x,top+(mute?kRowStep:0.f),kButton,kButton};
 }
+// v0.9: the T (tone) key sits in a second column next to S, on the same row, so S and M keep exactly the places they always had.
+// It goes to the right of S, or to its left if that would leave the stage.
+inline Rect toneBeside(float leftTop,float rightTop,float topRowY,float figureSize,
+                       float plotLeft,float plotTop,float plotRight,float plotBottom)
+{
+    const auto s=beside(leftTop,rightTop,topRowY,figureSize,plotLeft,plotTop,plotRight,plotBottom,false);
+    float x=s.x+kButton+2.f;
+    if(x+kButton>plotRight-3.f) x=s.x-kButton-2.f;
+    return {x,s.y,kButton,kButton};
+}
 inline Rect besideLead(float x,float y,float plotLeft,float plotTop,
                        float plotRight,float plotBottom,bool mute)
 { return beside(x,x,y,20.f,plotLeft,plotTop,plotRight,plotBottom,mute); }

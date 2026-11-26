@@ -235,7 +235,7 @@ void MeterStrip::paint(juce::Graphics& g) {
 
 // ============================================================================================== stage
 juce::Rectangle<float> StageView::pillBounds(int section) const {
-    const auto tag=worldToPoint(value("x"+juce::String(section)),value("y"+juce::String(section))-1.05f);
+    const auto tag=worldToPoint(sectionX(section),value("y"+juce::String(section))-1.05f);
     return juce::Rectangle<float>(tag.x-34.f,tag.y-8.f,68.f,16.f);
 }
 juce::Rectangle<float> StageView::leadPillBounds() const {
@@ -261,7 +261,7 @@ juce::Rectangle<float> StageView::stripButton(int voice,bool mute) const {
     const auto r=plot();
     stagecontrols::Rect button;
     if (voice<4) {
-        const float x=value("x"+juce::String(voice)), y=value("y"+juce::String(voice));
+        const float x=sectionX(voice), y=value("y"+juce::String(voice));
         const auto topLeft=worldToPoint(x-.705f,y+.53f);
         const auto topRight=worldToPoint(x+.705f,y+.53f);
         const float figureSize=juce::jlimit(11.f,19.f,getHeight()*.05f-.18f*(y-5.f));
@@ -286,6 +286,33 @@ int StageView::stripHit(juce::Point<float> pos) const {
         if(distance<bestDistance) {bestDistance=distance;closest=v*2+m;}
     }
     return closest;
+}
+float StageView::sectionX(int section) const {return choir::spreadX(value("x"+juce::String(section)),value("stageSpread"));}
+juce::Rectangle<float> StageView::toneButton(int section) const {
+    const auto r=plot();
+    const float x=sectionX(section), y=value("y"+juce::String(section));
+    const auto topLeft=worldToPoint(x-.705f,y+.53f);
+    const auto topRight=worldToPoint(x+.705f,y+.53f);
+    const float figureSize=juce::jlimit(11.f,19.f,getHeight()*.05f-.18f*(y-5.f));
+    const auto b=stagecontrols::toneBeside(topLeft.x,topRight.x,topRight.y,figureSize,r.getX(),r.getY(),r.getRight(),r.getBottom());
+    return {b.x,b.y,b.width,b.height};
+}
+int StageView::toneHit(juce::Point<float> pos) const {
+    int closest=-1; float bestDistance=1000000.f;
+    for(int v=0;v<4;++v) {
+        const auto b=toneButton(v);
+        if(!b.expanded(2.5f).contains(pos)) continue;
+        const float dx=pos.x-b.getCentreX(), dy=pos.y-b.getCentreY(), d=dx*dx+dy*dy;
+        if(d<bestDistance) {bestDistance=d;closest=v;}
+    }
+    return closest;
+}
+void StageView::cycleTone(int section) {
+    const auto id="tone"+juce::String(section);
+    if(auto* param=processor.parameters.getParameter(id)) {
+        const float next=(float)(((int)value(id)+1)%3);   // Normal, Bright, Dark, Normal...
+        param->beginChangeGesture();param->setValueNotifyingHost(param->convertTo0to1(next));param->endChangeGesture();
+    }
 }
 juce::Rectangle<float> StageView::roomChipRect() const {
     const auto r=plot();
@@ -461,7 +488,7 @@ int StageView::hit(juce::Point<float> pos) const {
     // Hit any member of the group, not only its centroid, like demo.js.
     const float groupReach=std::max(18.f,(float)getWidth()*.033f);
     for(int i=0;i<4;++i) {
-        const float x=value("x"+juce::String(i)),y=value("y"+juce::String(i));
+        const float x=sectionX(i),y=value("y"+juce::String(i));
         // The section-name pill is also a drag handle, not a dead part of the stage.
         if(pillBounds(i).contains(pos)) return i;
         for(int row=0;row<3;++row)for(int col=0;col<4;++col)
@@ -585,7 +612,7 @@ void StageView::paint(juce::Graphics& g) {
             }
         };
         for(int i=0;i<4;++i) {
-            const float x=value("x"+juce::String(i)),y=value("y"+juce::String(i));
+            const float x=sectionX(i),y=value("y"+juce::String(i));
             const int state=(int)value("sectionState"+juce::String(i));
             const bool audible=anySolo?state==1:state!=2;      // what you actually hear
             const auto base=kSection[(size_t)i];
@@ -606,6 +633,9 @@ void StageView::paint(juce::Graphics& g) {
                 drawFigure(g,where,c.withMultipliedAlpha(lit?1.f:.45f),singerSize,open);
             }
             if(hover==i||dragging==i) {g.setColour(base.withAlpha(.85f));g.drawEllipse(gc.x-72.f,gc.y-36.f,144.f,72.f,1.4f);}
+            if(const int toned=(int)value("tone"+juce::String(i));toned!=0) {   // a toned section wears a thin ring in its tone's colour: gold = bright, bass colour = dark
+                g.setColour((toned==1?kGold:kSection[3]).withAlpha(.55f));g.drawEllipse(gc.x-88.f,gc.y-46.f,176.f,92.f,1.1f);
+            }
             const auto pill=pillBounds(i);
             g.setColour(kBg.withAlpha(.62f));g.fillRoundedRectangle(pill,8.f);
             g.setColour(c.withAlpha(.9f));g.drawRoundedRectangle(pill.reduced(.5f),8.f,1.f);
@@ -613,6 +643,17 @@ void StageView::paint(juce::Graphics& g) {
             g.setColour(c.withAlpha(audible?1.f:.55f));
             g.drawText(sectionNames[i],pill,juce::Justification::centred);
             drawTagButtons(i);
+            {   // the T key: tone. Cream T = Normal, gold B = Bright, the bass colour D = Dark
+                const int tone=(int)value("tone"+juce::String(i));
+                const auto b=toneButton(i); const bool hot=toneHover==i, active=tone!=0;
+                const auto accent=tone==1?kGold:kSection[3];
+                g.setColour(kBg.withAlpha(.94f));g.fillRoundedRectangle(b.expanded(.35f),2.6f);
+                g.setColour(active?accent:kBg.withAlpha(.8f));g.fillRoundedRectangle(b,2.2f);
+                g.setColour(active?accent.brighter(.22f):kCream.withAlpha(hot?.98f:.82f));
+                g.drawRoundedRectangle(b.reduced(.45f),2.f,hot?1.2f:.95f);
+                g.setColour(active?kInk:kCream);g.setFont(boldFont(8.f));
+                g.drawText(tone==1?"B":tone==2?"D":"T",b,juce::Justification::centred);
+            }
         }
         // the lead: glows while you sing, breathes while her pitch is locked
         const auto lead=leadPosition();
@@ -692,6 +733,7 @@ void StageView::mouseDown(const juce::MouseEvent& e) {
         return;
     }
     if(const int button=stripHit(e.position);button>=0) {toggleState(button/2,button%2==1);return;}
+    if(const int section=toneHit(e.position);section>=0) {cycleTone(section);return;}
     dragging=hit(e.position);
     if(dragging==-2) return;
     // Remember where the thing is relative to the pointer, so it moves with the pointer instead of jumping its centre to it.
@@ -699,7 +741,7 @@ void StageView::mouseDown(const juce::MouseEvent& e) {
     choir::StagePoint thing;
     if(dragging==-1) {thing=micWorld();leadStart=leadWorld();}
     else if(dragging==-3) {thing=leadWorld();leadStart=thing;}
-    else {const auto s=juce::String(dragging);thing={value("x"+s),value("y"+s)};}
+    else {const auto s=juce::String(dragging);thing={sectionX(dragging),value("y"+s)};}
     grabX=thing.x-pointer.x;grabY=thing.y-pointer.y;
     startGesture(dragging);   // no mouseDrag() here: a click must not move anything
 }
@@ -715,19 +757,19 @@ void StageView::mouseDrag(const juce::MouseEvent& e) {
         change("leadX",offset.x);change("leadY",offset.y);
     } else {
         const auto s=juce::String(dragging);
-        change("x"+s,juce::jlimit(-9.f,9.f,target.x));
+        change("x"+s,choir::unspreadX(target.x,value("stageSpread")));   // the pointer is where the singers are DRAWN; store what draws them there
         change("y"+s,juce::jlimit(.7f,11.f,target.y));
     }
 }
 void StageView::mouseUp(const juce::MouseEvent&) {finishGesture(dragging);dragging=-2;}
 void StageView::mouseMove(const juce::MouseEvent& e) {
-    stripHover=stripHit(e.position);arrowHover=arrowHit(e.position);chipHover=roomChipRect().contains(e.position);
-    hover=(stripHover>=0||arrowHover>=0||chipHover)?-2:hit(e.position);
+    stripHover=stripHit(e.position);toneHover=toneHit(e.position);arrowHover=arrowHit(e.position);chipHover=roomChipRect().contains(e.position);
+    hover=(stripHover>=0||toneHover>=0||arrowHover>=0||chipHover)?-2:hit(e.position);
 }
-void StageView::mouseExit(const juce::MouseEvent&) {hover=-2;stripHover=-1;arrowHover=-1;chipHover=false;}
+void StageView::mouseExit(const juce::MouseEvent&) {hover=-2;stripHover=-1;toneHover=-1;arrowHover=-1;chipHover=false;}
 void StageView::mouseDoubleClick(const juce::MouseEvent& e) {
     // Double-click puts the thing back where it started: to its own default, not to zero.
-    if(stripHit(e.position)>=0||arrowHit(e.position)>=0||roomChipRect().contains(e.position)) return;   // the buttons take single clicks only
+    if(stripHit(e.position)>=0||toneHit(e.position)>=0||arrowHit(e.position)>=0||roomChipRect().contains(e.position)) return;   // the buttons take single clicks only
     const int what=hit(e.position);
     if(what==-3) {
         startGesture(-3);resetParameter("leadX");resetParameter("leadY");finishGesture(-3);
@@ -849,6 +891,7 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
     addKnob("HALL","hall",pageRoom,"An extra hall under the choir. Off at 0%.",ValueFormat::PercentOfRange);
     addKnob("HALL TIME","hallSeconds",pageRoom,"Tail length of the extra hall.",ValueFormat::Seconds);
     addKnob("MIC SPACING","width",pageRoom,"Distance between the two microphones.",ValueFormat::Metres);
+    addKnob("STAGE SPREAD","stageSpread",pageRoom,"Widens or narrows the choir across the stage. The singer positions and drag targets follow the spread; 100% is exactly as placed.",ValueFormat::Percent);
     addChoice("MIC ARRAY","micMode",pageRoom,"How the microphones are arranged to listen to the stage.");
     abButton.setClickingTogglesState(true);
     abButton.setTooltip("Faithful: the full stage model. Classic: the simpler v0.5 stage. Same latency, so switching never shifts timing.");
@@ -878,14 +921,21 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
     addKnob("FOLLOW LEAD","vowelFollow",pageVoice,"How closely the synthesised singers copy your vowel.",ValueFormat::Percent);
     addKnob("BREATH","choirBreath",pageVoice,"Breathiness of the synthesised singers.",ValueFormat::Percent);
     addKnob("VIBRATO","vibrato",pageVoice,"Vibrato of the synthesised singers.",ValueFormat::Percent);
+    addKnob("TONE AMOUNT","toneAmount",pageVoice,"How strong the T keys on the stage are. 100% is as designed; 0% turns the tone off; more is stronger.",ValueFormat::Percent);
+    addKnob("PHRASE BREATH","phraseBreath",pageVoice,"A soft breath from the choir as you start singing after a pause. 0% is off.",ValueFormat::Percent);
+    addKnob("VIB SPREAD","vibeSpread",pageVoice,"Varies the vibrato depth of each harmony singer and the vocal tract of blended synthetic singers. 0% keeps the original response.",ValueFormat::Percent);
 
     autoLevelButton.setClickingTogglesState(true);
     autoLevelButton.setTooltip("Keeps the loudness steady as CHOIR MIX moves, so turning the choir up never makes the plugin quieter. Off gives the raw mix, as in versions before 0.7. (Faithful engine only.)");
     autoLevelAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.parameters,"levelMatch",autoLevelButton);
     grainLockButton.setClickingTogglesState(true);
-    grainLockButton.setTooltip("For held, steady notes: the harmony voices' grain window follows the length of your voice's pitch period, which removes the faint ripple of the pitch shifting. Off is the original sound. It does not help with strong vibrato.");
+    grainLockButton.setTooltip("Legacy pitch-locked grain window. Pitch Sync is a separate optional engine.");
     grainLockAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.parameters,"grainLock",grainLockButton);
     addSide(pageVoice,grainLockButton);
+    pitchSyncButton.setClickingTogglesState(true);
+    pitchSyncButton.setTooltip("A cleaner pitch shifter for the harmony voices. Instead of two overlapping grains that beat against each other, each voice jumps by whole pitch periods of your voice, lined up on the waveform, so held notes and vibrato stay smooth and the choir sits about 30 ms closer to you. Off is the original sound.");
+    pitchSyncAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.parameters,"pitchSync",pitchSyncButton);
+    addSide(pageVoice,pitchSyncButton);
     addKnob("CHOIR LEVEL","choirLevel",pageFollow,"The choir against your voice, in dB. Works with CHOIR MIX.",ValueFormat::Db);
     addKnob("SENSITIVITY","sensitivity",pageFollow,"How quiet a sound can be and still start the choir. Raise it for soft singing, lower it for a noisy input.",ValueFormat::Percent);
     addKnob("CONSONANTS","consonants",pageFollow,"Your own s, t and k pass through cleanly instead of being smeared by sixteen singers. The choir sings the vowels. 0% is off.",ValueFormat::Percent);
@@ -1272,6 +1322,11 @@ void OmniChoirAudioProcessorEditor::rebuildStyleMenu() {
     presetBox.clear(juce::dontSendNotification);
     presetBox.addSectionHeading("STYLES: a whole sound");
     for(int i=0;i<choir::kNumStylePresets;++i)presetBox.addItem(choir::kStylePresets[i].name,1+i);
+    presetBox.addSeparator();
+    presetBox.addSectionHeading("STACKS: who sings");
+    for(int i=0;i<choir::kNumStackPresets;++i)presetBox.addItem(choir::kStackPresets[i].name,100+i);
+    presetBox.addSeparator();
+    presetBox.addItem("Reset spreads, tones and breath",300);
     styleFiles.clear();
     for(const auto& file:processor.userStyleFiles()) if(styleFiles.size()<80) styleFiles.push_back(file);
     if(!styleFiles.empty()) {
@@ -1306,6 +1361,8 @@ void OmniChoirAudioProcessorEditor::handleStyleMenu(int id) {
         return;
     }
     if(id>=1 && id<100) {processor.applyStyle(id-1);return;}
+    if(id>=100 && id<100+choir::kNumStackPresets) {processor.applyStack(id-100);return;}
+    if(id==300) {processor.resetSpreads();return;}
     juce::Component::SafePointer<OmniChoirAudioProcessorEditor> safe(this);
     if(id==900) {
         chooser=std::make_unique<juce::FileChooser>("Save this sound as a style",OmniChoirAudioProcessor::userStyleFolder().getChildFile("My style.omnistyle"),"*.omnistyle");
@@ -1476,6 +1533,7 @@ void OmniChoirAudioProcessorEditor::timerCallback() {
     abButton.setButtonText(abButton.getToggleState()?"ENGINE: CLASSIC":"ENGINE: FAITHFUL");
     autoLevelButton.setButtonText(autoLevelButton.getToggleState()?"AUTO LEVEL: ON":"AUTO LEVEL: OFF");
     grainLockButton.setButtonText(grainLockButton.getToggleState()?"STEADY NOTES: ON":"STEADY NOTES: OFF");
+    pitchSyncButton.setButtonText(pitchSyncButton.getToggleState()?"PITCH SYNC: ON":"PITCH SYNC: OFF");
     irButton.setButtonText(processor.hasImpulseResponse()?"ROOM: "+processor.impulseResponseName().toUpperCase().substring(0,12):juce::String("ROOMS / LOAD IR"));
     const int status=take.status();
     if(status!=lastTakeStatus && status!=1 &&status!=3 && status!=5 && status!=7) {

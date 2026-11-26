@@ -7,7 +7,7 @@ namespace {
 // Saved-state version. Absent = 1 (v0.4 to v0.6.0). 2 = v0.6.1: CHOIR LEVEL exists and the faithful choir carries a +12 dB make-up.
 // 4 = v0.8: KEY/SCALE, CONSONANTS, SWELL, PULSE, LISTEN (mode 1 became Listen). A session older than 4 loads with CONSONANTS off.
 // 3 = v0.7: AUTO LEVEL (levelMatch), CHOIR SIZE, solo/mute, MIDI chord mode, built-in rooms. A session older than 3 loads with AUTO LEVEL off.
-constexpr int kStateVersion=4;
+constexpr int kStateVersion=5;
 // A session saved before version 2 was balanced against the quieter choir. To keep it sounding the way it did, it loads with CHOIR LEVEL
 // at this value (the dial then shows why). Set it to 0 to give old sessions the new, louder default instead.
 constexpr float kLegacyChoirLevelDb=-12.f;
@@ -39,7 +39,7 @@ OmniChoirAudioProcessor::OmniChoirAudioProcessor()
         raw.ys[(size_t)i]=parameters.getRawParameterValue("y"+s);
     }
     auto get=[this](const juce::String& id){ return parameters.getRawParameterValue(id); };
-    raw.micX=get("micX"); raw.micY=get("micY"); raw.width=get("width"); raw.micMode=get("micMode");
+    raw.micX=get("micX"); raw.micY=get("micY"); raw.width=get("width");raw.stageSpread=get("stageSpread"); raw.micMode=get("micMode");
     raw.choirOn=get("choirOn");raw.mode=get("mode"); raw.harmony=get("harmony"); raw.ensemble=get("ensemble"); raw.sensitivity=get("sensitivity");
     raw.roomSize=get("roomSize"); raw.roomSeconds=get("roomSeconds"); raw.absorption=get("absorption");
     raw.diffusion=get("diffusion"); raw.wet=get("wet"); raw.mix=get("mix"); raw.master=get("master");
@@ -47,10 +47,11 @@ OmniChoirAudioProcessor::OmniChoirAudioProcessor()
     raw.humanize=get("humanize");raw.formant=get("formant");
     raw.hall=get("hall");raw.hallSeconds=get("hallSeconds");
     raw.voiceBlend=get("voiceBlend");raw.choirVowel=get("choirVowel");raw.vowelFollow=get("vowelFollow");
-    raw.choirBreath=get("choirBreath");raw.vibrato=get("vibrato");raw.classicStage=get("classicStage");
-    raw.choirLevel=get("choirLevel");raw.levelMatch=get("levelMatch");raw.grainLock=get("grainLock");raw.choirSize=get("choirSize");
+    raw.choirBreath=get("choirBreath");raw.vibeSpread=get("vibeSpread");raw.phraseBreath=get("phraseBreath");raw.toneAmount=get("toneAmount");raw.vibrato=get("vibrato");raw.classicStage=get("classicStage");
+    raw.choirLevel=get("choirLevel");raw.levelMatch=get("levelMatch");raw.grainLock=get("grainLock");raw.pitchSync=get("pitchSync");raw.choirSize=get("choirSize");
     raw.consonants=get("consonants");raw.swell=get("swell");raw.keyRoot=get("keyRoot");raw.scale=get("scale");raw.pulseRate=get("pulseRate");raw.pulseDepth=get("pulseDepth");
     for(int i=0;i<5;++i) raw.sectionState[(size_t)i]=get("sectionState"+juce::String(i));
+    for(int i=0;i<4;++i) raw.tone[(size_t)i]=get("tone"+juce::String(i));
 #ifdef SKELLYCHOIR_WITH_SKELLCORE
     // SkellKey's Send to Tune publishes Key/Scale/A4 without SkellyHub.
     setFollowSkellKey(true);
@@ -168,6 +169,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout OmniChoirAudioProcessor::cre
     layout.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"pulseRate",1},"Pulse Rate",
         juce::StringArray{"Off","2 bars","1 bar","1/2 bar","1 beat","1/2 beat"},0));
     addFloat(layout,"pulseDepth","Pulse Depth",0.f,1.f,.001f,.5f);
+    // New parameters are appended to preserve legacy host indices.
+    addFloat(layout,"stageSpread","Stage Spread",.25f,1.8f,.01f,1.f);                                                // v0.9: widens or narrows the choir left to right; 1 = as placed
+    addFloat(layout,"toneAmount","Tone Amount",0.f,1.6f,.01f,1.f);                                                    // v0.9: strength of the T keys; 1 = as designed
+    addFloat(layout,"phraseBreath","Phrase Breath",0.f,1.f,.001f,0.f);                                              // v0.9, opt-in: a soft inhale as you start after a pause
+    addFloat(layout,"vibeSpread","Vibrato Spread",0.f,1.f,.001f,0.f);                                              // v0.9, opt-in: 0 = every harmony voice copies your vibrato exactly (the original sound)
+    for(int i=0;i<4;++i)                                                                                           // v0.9: TONE per section (the T button on the stage); Normal is the original sound
+        layout.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"tone"+juce::String(i),1},names[i]+" Tone",juce::StringArray{"Normal","Bright","Dark"},0));
+    layout.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"pitchSync",1},"Pitch Sync",false));
     return layout;
 }
 void OmniChoirAudioProcessor::prepareToPlay(double sampleRate,int samplesPerBlock) {
@@ -192,7 +201,7 @@ bool OmniChoirAudioProcessor::isBusesLayoutSupported(const BusesLayout& layout) 
 choir::FXParams OmniChoirAudioProcessor::readParams() const {
     choir::FXParams p;
     const auto read=[](const std::atomic<float>* x){return x->load(std::memory_order_relaxed);};
-    for(int i=0;i<4;++i) {p.gain[(size_t)i]=read(raw.gains[(size_t)i]);p.x[(size_t)i]=read(raw.xs[(size_t)i]);p.y[(size_t)i]=read(raw.ys[(size_t)i]);}
+    for(int i=0;i<4;++i) {p.gain[(size_t)i]=read(raw.gains[(size_t)i]);p.x[(size_t)i]=choir::spreadX(read(raw.xs[(size_t)i]),read(raw.stageSpread));p.y[(size_t)i]=read(raw.ys[(size_t)i]);}
     p.micX=read(raw.micX);p.micY=read(raw.micY);p.width=read(raw.width);p.micMode=(int)read(raw.micMode);
     p.choirOn=read(raw.choirOn)>.5f;p.mode=(int)read(raw.mode);p.harmony=(int)read(raw.harmony);p.ensemble=read(raw.ensemble);p.sensitivity=read(raw.sensitivity);
     p.roomSize=read(raw.roomSize);p.roomSeconds=read(raw.roomSeconds);p.absorption=read(raw.absorption);
@@ -202,8 +211,10 @@ choir::FXParams OmniChoirAudioProcessor::readParams() const {
     p.humanize=read(raw.humanize);p.formant=read(raw.formant);
     p.hall=read(raw.hall);p.hallSeconds=read(raw.hallSeconds);
     p.voiceBlend=read(raw.voiceBlend);p.choirVowel=read(raw.choirVowel);p.vowelFollow=read(raw.vowelFollow);
-    p.choirBreath=read(raw.choirBreath);p.vibrato=read(raw.vibrato);p.classicStage=read(raw.classicStage)>.5f;
-    p.choirLevelDb=read(raw.choirLevel);p.levelMatch=read(raw.levelMatch)>.5f;p.lockGrains=read(raw.grainLock)>.5f;
+    p.choirBreath=read(raw.choirBreath);p.vibratoSpread=read(raw.vibeSpread);p.phraseBreath=read(raw.phraseBreath);
+    { const float ta=read(raw.toneAmount); p.toneAmount=std::fabs(ta-1.f)<.005f?1.f:ta; } // exact neutral is 1
+    p.vibrato=read(raw.vibrato);p.classicStage=read(raw.classicStage)>.5f;
+    p.choirLevelDb=read(raw.choirLevel);p.levelMatch=read(raw.levelMatch)>.5f;p.lockGrains=read(raw.grainLock)>.5f;p.pitchSync=read(raw.pitchSync)>.5f;
     p.keyRoot=(int)read(raw.keyRoot);p.scale=(int)read(raw.scale);p.consonants=read(raw.consonants);
 #ifdef SKELLYCHOIR_WITH_SKELLCORE
     if (followWorldKey_.load(std::memory_order_relaxed)) {
@@ -212,6 +223,7 @@ choir::FXParams OmniChoirAudioProcessor::readParams() const {
     }
 #endif
     p.swell=read(raw.swell);p.pulseRate=(int)read(raw.pulseRate);p.pulseDepth=read(raw.pulseDepth);
+    for(int i=0;i<4;++i) p.sectionTone[(size_t)i]=(int)read(raw.tone[(size_t)i]);
     choir::applySize(p,read(raw.choirSize));
     // solo and mute: a muted section is silent; if any section is soloed, only soloed sections are heard
     // the lead (your own voice on the stage) takes part too: solo the lead and only she is heard; mute her and she is silent
@@ -323,6 +335,11 @@ void OmniChoirAudioProcessor::setStateInformation(const void* data,int size) {
                 if(auto* match=parameters.getParameter("levelMatch")) match->setValueNotifyingHost(match->convertTo0to1(0.f));
             if(version<4)   // saved before CONSONANTS existed: it loads with CONSONANTS off, exactly as it sounded
                 if(auto* cons=parameters.getParameter("consonants")) cons->setValueNotifyingHost(cons->convertTo0to1(0.f));
+            if(version<5) { // restore neutral defaults for newly added parameters in older published projects
+                setParameterValue("pitchSync",0.f);setParameterValue("stageSpread",1.f);
+                setParameterValue("toneAmount",1.f);setParameterValue("phraseBreath",0.f);setParameterValue("vibeSpread",0.f);
+                for(int i=0;i<4;++i) setParameterValue("tone"+juce::String(i),0.f);
+            }
             scene.store(scenes::clampScene(xml->getIntAttribute("omniScene",0)));   // older sessions: the original photo
             setProUi(xml->getBoolAttribute("omniProUi",true));   // a session from before the Easy mode keeps the full MAIN page
             savedRoot.store(juce::jlimit(0,11,xml->getIntAttribute("scanPitchClass",0)));
@@ -420,9 +437,24 @@ void OmniChoirAudioProcessor::applyStyleValues(const choir::StylePreset& s) {
 }
 void OmniChoirAudioProcessor::applyStyle(int index) {
     if(index<0 || index>=choir::kNumStylePresets) return;
+    resetSpreads(); // published factory styles must not inherit experimental sound shaping
     applyStyleValues(choir::kStylePresets[index]);
     currentProgram=index;
     setActiveStyleName(choir::kStylePresets[index].name);
+}
+void OmniChoirAudioProcessor::resetSpreads() {
+    const auto set=[this](const juce::String& id,float value) {setParameterValue(id,value);};
+    set("vibeSpread",0.f);set("stageSpread",1.f);set("phraseBreath",0.f);set("toneAmount",1.f);
+    for(int i=0;i<4;++i) set("tone"+juce::String(i),0.f);
+}
+void OmniChoirAudioProcessor::applyStack(int index) {
+    if(index<0 || index>=choir::kNumStackPresets) return;
+    const auto& s=choir::kStackPresets[index];
+    const auto set=[this](const juce::String& id,float value) {setParameterValue(id,value);};
+    set("harmony",(float)s.harmony);set("mix",s.mix);set("ensemble",s.ensemble);set("humanize",s.humanize);
+    set("voiceBlend",s.voiceBlend);set("choirBreath",s.choirBreath);set("vibeSpread",s.vibratoSpread);
+    for(int i=0;i<4;++i) set("sectionState"+juce::String(i),s.sings[(size_t)i]?0.f:2.f);   // Normal or Mute; the lead's state, the room and the levels are never touched
+    setActiveStyleName(s.name);
 }
 void OmniChoirAudioProcessor::surpriseMe() {
     if(surpriseState==0) surpriseState=juce::Time::getMillisecondCounter()|1u;
@@ -463,6 +495,7 @@ bool OmniChoirAudioProcessor::loadStyleFile(const juce::File& file) {
     if(!file.existsAsFile() || file.getSize()>64*1024) return false;   // a style file is a couple of kilobytes: refuse anything silly
     choir::StyleFileData data;
     if(!choir::parseStyleFile(file.loadFileAsString().toStdString(),data) || data.values.empty()) return false;
+    resetSpreads(); // old style files omit the new controls; explicit values below override neutral defaults
     for(const auto& value:data.values)
         setParameterValue(juce::String(value.first),value.second);   // allow-listed placement and sound, including lead/mic; older files omit unknown values
     if(data.scene>=0) scene.store(scenes::clampScene(data.scene));

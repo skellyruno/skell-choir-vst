@@ -14,10 +14,12 @@ namespace choir {
 inline constexpr const char* kUserStyleIds[] = {
     "x0", "y0", "gain0", "x1", "y1", "gain1", "x2", "y2", "gain2", "x3", "y3", "gain3",              // where the four sections stand
     "micX", "micY", "leadX", "leadY", "width", "micMode",                                                                // the microphones
+    "stageSpread",                                                                                     // v0.9: how wide the choir stands (older files restore the neutral spread)
     "roomSize", "roomSeconds", "absorption", "diffusion", "wet", "hall", "hallSeconds",                // the room
     "harmony", "mix", "choirSize", "ensemble", "humanize", "formant",                                  // how the choir is built
-    "voiceBlend", "choirVowel", "vowelFollow", "choirBreath", "vibrato",                               // how the singers sing
+    "voiceBlend", "choirVowel", "vowelFollow", "choirBreath", "vibrato", "vibeSpread", "phraseBreath", "toneAmount",                 // how the singers sing
     "consonants", "swell", "pulseRate", "pulseDepth",                                                  // how it follows you
+    "tone0", "tone1", "tone2", "tone3",                                                                // v0.9: the T key of each section (Normal / Bright / Dark)
 };
 inline constexpr int kNumUserStyleIds = (int) (sizeof(kUserStyleIds) / sizeof(kUserStyleIds[0]));
 

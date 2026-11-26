@@ -37,6 +37,11 @@ struct FXParams : Params {
     int keyRoot = 0;                 // v0.8: the key you choose, 0 = C .. 11 = B (nothing is detected)
     int scale = 0;                   // v0.8: index into kScales; 0 = Chromatic = off, the fixed v0.7 intervals
     bool lockGrains = false;         // v0.9 opt-in: the granular voices use a window of whole pitch periods (steady notes: far fewer sidebands). Off = the original sound, bit for bit
+    bool pitchSync = false;          // opt-in (the STEADY NOTES button): the harmony voices shift with period-synchronous jumps instead of two free grains (see SyncVoice): clean through vibrato, ~30 ms less lag. Off = the original sound, bit for bit
+    std::array<int,4> sectionTone {};  // v0.9: per section 0 normal, 1 bright, 2 dark (a gentle high shelf on that section's singers; 0 is bypassed exactly)
+    float toneAmount = 1.f;          // v0.9: how strong the T keys are, 0..1.6 (1 = as designed: +3.4 / -3.4 dB at 4-7 kHz; 0 = no tone)
+    float phraseBreath = 0.f;        // v0.9, 0..1: a soft inhale from the choir as you start singing after a pause (0 = off, bit-identical)
+    float vibratoSpread = 0.f;       // v0.9, 0..1: each harmony singer copies your vibrato at their own depth (0 = every voice copies it exactly, the original sound)
     bool levelMatch = false;         // v0.7: keep the output loudness steady as CHOIR MIX moves (faithful stage only)
     std::array<int,4> midiNotes {{-1,-1,-1,-1}};   // v0.7, mode 2: the MIDI note each section sings (soprano..bass), -1 = no note held
     float choirLevelDb = 0.f;        // v0.6.1: choir level in dB, -12..+12, faithful stage only (the classic stage stays bit-identical to v0.5)
@@ -79,9 +84,47 @@ public:
     void processPair(const std::vector<float>& original,const std::vector<float>& excitation,
                      int write,float window,float minDelay,float& raw,float& exc);
     float ratio = 1.f, targetRatio = 1.f;
+    float vibMul = 1.f;                       // a per-singer multiplier on the read speed that bends the copied vibrato (1 = off, exactly)
 private:
     float phase = 0.f;
     static float read(const std::vector<float>& data, int write, float samplesBack);
+};
+
+// What a SyncVoice needs to know about the lead at this instant.
+struct SyncContext {
+    float sampleRate = 48000.f;
+    float period = 0.f;                       // the lead's pitch period in samples, 0 = not clearly pitched (consonant, breath, noise)
+    const std::vector<float>* mark = nullptr; // low-passed copy of the input history (same indexing): what the seams are aligned on
+};
+
+// Period-synchronous variable-delay pitch shifter (opt-in, FXParams::pitchSync).
+//
+// The two-grain shifter (GrainVoice) reads the input at speed `ratio` through two Hann grains half a window apart, so the two reads are
+// out of phase and beat at the grain rate (~7-23 Hz), and its window cannot follow vibrato (see docs/V0_9_CHANGELOG.md, STEADY NOTES).
+// This one keeps a single read pointer that moves at exactly `ratio` (so the pitch is exact, vibrato included) and, when the delay
+// leaves its small window, JUMPS by a whole number of the singer's periods. Each jump is refined by cross-correlation (+-15% of a
+// period) so the old and new read points carry the same waveform phase, then cross-faded over about one period. The two signals in the
+// fade are therefore nearly identical and add instead of beating, whatever the pitch is doing. The delay stays within roughly
+// 5..25 ms instead of 9..82 ms, so the choir also trails the lead by about 30 ms less. Unpitched input (a breath, an 's') is jumped by a
+// fixed 6 ms with an equal-power fade. Like GrainVoice it resamples, so formants move with the pitch (CHARACTER's LPC path is unchanged).
+class SyncVoice {
+public:
+    void reset(float seed01);
+    void processPair(const std::vector<float>& original, const std::vector<float>& excitation, int write, float baseDelay,
+                     const SyncContext& ctx, float& raw, float& exc);
+    float ratio = 1.f, targetRatio = 1.f;
+    float vibMul = 1.f;                       // a per-singer multiplier on the read speed that bends the copied vibrato (1 = off, exactly)
+    int jumps() const { return jumpCount; }   // for tests: how many seams this voice has made
+    int pitchedJumps() const { return pitchedCount; }   // ...how many of them were aligned on a pitched waveform
+    double meanSeamRho() const { return pitchedCount ? rhoSum/pitchedCount : 0.0; }   // ...and how alike the two read points were (1 = identical)
+private:
+    void jump(const std::vector<float>& original, int write, float baseDelay, const SyncContext& ctx, float low, float span, float period, bool voiced, float fadeLen);
+    double delay = 0, oldDelay = 0;
+    float fade = 1.f, fadeInc = 0.f, seed = 0.f;
+    float rho = 0.f;      // how alike the old and new read points are (0..1): the cross-fade keeps the POWER constant for that correlation
+    bool started = false;
+    int jumpCount = 0, pitchedCount = 0;
+    double rhoSum = 0;
 };
 
 class ChoirEffect {
@@ -116,6 +159,12 @@ public:
 private:
     static constexpr int singers = voicesPerSection; // distinct timing, detune, tone, stereo per section
     std::array<GrainVoice, sections*singers> layers;
+    std::array<SyncVoice, sections*singers> syncLayers;   // the pitchSync engine; layers[] is untouched and bit-identical while syncMix is 0
+    std::vector<float> markHistory;                       // input history low-passed at ~1 kHz, for aligning the seams
+    float markLp1 = 0.f, markLp2 = 0.f, markCoef = .1f;
+    float syncMix = 0.f, syncPeriod = 0.f;                // 0 = GrainVoice only, 1 = SyncVoice only (a 20 ms cross-fade between them when the button is pressed)
+    bool fresh = true;                                    // no sample processed since reset(): a new setting takes effect at once
+    float vibSlow = -1.f, vibDev = 0.f; bool vibActive = false; std::array<float,8192> vibRing {}; int vibPos = 0;   // the lead's slow pitch and its fast deviation from it (semitones), for vibratoSpread
     std::array<float,sections*singers> singerL {}, singerR {}, singerTone {}, singerLP {}, singerHP {}, singerBaseSemis {};
     // Independent, seeded per-singer expressive wandering. Deterministic across
     // renders and host buffer sizes; control-rate updates never allocate.
@@ -143,6 +192,9 @@ private:
 public:
     static constexpr float kMaxWindowSeconds = .085f, kWindowSlewSamplesPerSample = .002f;   // .2% pitch error at most while the window moves
     float windowInUse() const { return windowNow; }
+    int syncJumps(int voice) const { return syncLayers[(size_t)voice].jumps(); }            // tests: seams the pitchSync engine has made (0 while it is off)
+    int syncPitchedJumps(int voice) const { return syncLayers[(size_t)voice].pitchedJumps(); }
+    double syncSeamCorrelation(int voice) const { return syncLayers[(size_t)voice].meanSeamRho(); }
     // the window (in samples) that makes the two grains' read points a whole number of periods apart: an even number of periods near 73 ms, never longer than the history allows
     static float lockedWindowFor(float f0, float sampleRate) {
         const float periods = std::max(2.f, 2.f * std::round(.073f * f0 * .5f));

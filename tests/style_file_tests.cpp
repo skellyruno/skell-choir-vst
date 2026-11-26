@@ -21,7 +21,7 @@ int main(int argc, char** argv)
             // the per-section ids are declared in a loop ("x"+s), the others by name
             const std::string id = kUserStyleIds[i]; const bool perSection = id.size() > 1 && std::isdigit((unsigned char) id.back());
             const std::string stem = perSection ? id.substr(0, id.size() - 1) : id;
-            CHECK(perSection ? src.find("addFloat(layout,\"" + stem + "\"+s,") != std::string::npos : declares(src, id), "style-file id '%s' is not a parameter of the plugin", kUserStyleIds[i]);
+            CHECK(perSection ? (src.find("addFloat(layout,\"" + stem + "\"+s,") != std::string::npos || src.find("ParameterID{\"" + stem + "\"+juce::String(i),1}") != std::string::npos) : declares(src, id), "style-file id '%s' is not a parameter of the plugin", kUserStyleIds[i]);
             for (const char* f : forbidden) CHECK(std::string(kUserStyleIds[i]) != f, "'%s' must never be saved in or loaded from a style file", f);
         }
         for (int i = 0; i < kNumUserStyleIds; ++i) for (int j = i + 1; j < kNumUserStyleIds; ++j) CHECK(std::string(kUserStyleIds[i]) != kUserStyleIds[j], "duplicate id %s", kUserStyleIds[i]);
@@ -29,6 +29,7 @@ int main(int argc, char** argv)
         const char* setByStyles[] = { "harmony", "mix", "choirSize", "ensemble", "humanize", "formant", "voiceBlend", "choirVowel", "vowelFollow", "choirBreath", "vibrato",
                                       "micX", "micY", "leadX", "leadY", "width", "micMode", "roomSize", "roomSeconds", "absorption", "diffusion", "wet", "hall", "hallSeconds" };
         for (const char* id : setByStyles) CHECK(isUserStyleId(id), "'%s' is set by the factory styles but cannot be saved in a style file", id);
+        for (const char* id : { "stageSpread", "vibeSpread", "phraseBreath", "toneAmount", "tone0", "tone1", "tone2", "tone3" }) CHECK(isUserStyleId(id), "the v0.9 setting '%s' cannot be saved in a style file", id);
         for (int s = 0; s < 4; ++s) for (const char* p : { "x", "y", "gain" }) CHECK(isUserStyleId(std::string(p) + std::to_string(s)), "section %d '%s' cannot be saved", s, p);
         std::printf("[1] the %d style-file ids are real parameters, none of them is yours (lead, output, auto level, mode, key, solo/mute)\n", kNumUserStyleIds);
     }

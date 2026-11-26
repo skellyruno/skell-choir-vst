@@ -53,6 +53,11 @@ TESTS=(
   "title_layout_tests|tests/title_layout_tests.cpp|"
   "curtain_tests|tests/curtain_tests.cpp|"
   "grain_lock_tests|tests/grain_lock_tests.cpp $ENGINE|"
+  "sync_shift_tests|tests/sync_shift_tests.cpp $ENGINE|$ROOT/tests/data"
+  "vibrato_stack_tests|tests/vibrato_stack_tests.cpp $ENGINE|$ROOT"
+  "stage_spread_tests|tests/stage_spread_tests.cpp $STAGED|$ROOT"
+  "section_tone_tests|tests/section_tone_tests.cpp $STAGED|$ROOT"
+  "phrase_breath_tests|tests/phrase_breath_tests.cpp $STAGED|$ROOT"
   "skull_shape_tests|tests/skull_shape_tests.cpp|"
   "theme_tests|tests/theme_tests.cpp|$ROOT"
   "stage_geometry_tests|tests/stage_geometry_tests.cpp|$ROOT"
@@ -81,6 +86,11 @@ if [[ -z "$filter" ]] && command -v python3 > /dev/null; then
   printf '%-18s ' "quick4_contract"
   if python3 -m unittest discover -s tests -p test_quick4_renderer_contract.py > "$OUT/quick4_contract.log" 2>&1; then echo "ok   $(tail -n1 "$OUT/quick4_contract.log")"; pass=$((pass+1))
   else echo "FAILED (see $OUT/quick4_contract.log)"; tail -n 8 "$OUT/quick4_contract.log" | sed 's/^/                     /'; fail=$((fail+1)); failed+=(quick4_contract); fi
+fi
+if [[ -z "$filter" ]] && command -v python3 > /dev/null; then
+  printf '%-18s ' "processor_wiring"
+  if python3 -m unittest discover -s tests -p test_processor_wiring.py > "$OUT/processor_wiring.log" 2>&1; then echo "ok   processor host parameters reach DSP"; pass=$((pass+1))
+  else echo "FAILED (see $OUT/processor_wiring.log)"; tail -n 8 "$OUT/processor_wiring.log" | sed 's/^/                     /'; fail=$((fail+1)); failed+=(processor_wiring); fi
 fi
 if [[ -z "$filter" ]]; then
   printf '%-18s ' "ui_syntax"
