@@ -1,6 +1,6 @@
 # SkellyChoir 0.9.0 — Windows VST3 private preview
 
-This package is a **private, unsigned preview**, not a commercial release. The installer does not change the registry, other plugins, presets, DAW projects, host state, or licensing files.
+This package is an **unsigned testing preview**, not a commercial release. The installer does not change the registry, other plugins, presets, DAW projects, host state, or licensing files.
 
 ## Install
 
@@ -38,5 +38,5 @@ Rollback restores only the immediately previous verified SkellyChoir bundle. The
 - The installer verifies preview provenance, pluginval strictness 5, strict VST3 metadata, the two preserved processor/controller class IDs, and an AMD64 PE32+ module.
 - The installer is not code-signed and does not enable automatic updates.
 - FL Studio scan/load, old-project compatibility, real musical A/B, owner listening approval, target-hardware CPU/latency, final attribution, and commercial licensing remain separate release gates.
-- Do not distribute this preview publicly or treat a passing CI run as FL Studio acceptance.
-- This repository is public. Its Windows workflow now uploads the installable VST3 package only when repository visibility is `private`; public runs continue validation but withhold the package, installer and provenance artifact. Any owner-test copy must be transferred through a private owner-controlled channel. Pre-existing public workflow artifacts are not made private by this rule.
+- Do not redistribute this preview as a commercial release or treat a passing CI run as FL Studio acceptance.
+- Owner-authorized 2026-11-25: validated Windows Actions testing artifacts are downloadable regardless of repository visibility. Other GitHub users may access public artifacts. Private vocal fixtures must remain outside the package.

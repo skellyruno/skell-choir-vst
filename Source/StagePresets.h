@@ -3,6 +3,8 @@
 // parameters only (never the musical ones: harmony, mix, lead level, output), so trying a room never changes what
 // is sung or how loud the plugin is overall.
 #include "ChoirFX.h"
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 
 namespace choir {
@@ -22,6 +24,23 @@ struct StagePreset
 struct ParamRange { float lo, hi; };
 inline constexpr ParamRange kRangeX { -9.f, 9.f }, kRangeY { .7f, 11.f }, kRangeGain { 0.f, 1.5f }, kRangeMicX { -9.f, 9.f }, kRangeMicY { -8.f, 8.f },
     kRangeWidth { .1f, 3.f }, kRangeUnit { 0.f, 1.f }, kRangeRoomSeconds { .2f, 10.f }, kRangeWet { 0.f, 1.5f }, kRangeHall { 0.f, .5f }, kRangeHallSeconds { .5f, 8.f };
+
+// STAGE SPREAD (v0.9): one knob that widens or narrows the whole choir's left-right spread without touching the four X positions (they keep their
+// own values and the stage picture). 1 = exactly as placed. Only the singers' X is scaled, about the middle of the stage, and kept on the stage.
+inline constexpr ParamRange kRangeStageSpread { .25f, 1.8f };
+inline float spreadX(float x, float spread)
+{
+    if (std::fabs(spread - 1.f) < .005f) return x;               // the knob's neutral position is exactly "as placed", bit for bit
+    const float v = x * std::max(kRangeStageSpread.lo, std::min(kRangeStageSpread.hi, spread));
+    return std::max(kRangeX.lo, std::min(kRangeX.hi, v));
+}
+// the opposite: where a section is stored if the stage shows it at `shown` (so dragging the drawn singers lands where the pointer is)
+inline float unspreadX(float shown, float spread)
+{
+    if (std::fabs(spread - 1.f) < .005f) return std::max(kRangeX.lo, std::min(kRangeX.hi, shown));
+    const float s = std::max(kRangeStageSpread.lo, std::min(kRangeStageSpread.hi, spread));
+    return std::max(kRangeX.lo, std::min(kRangeX.hi, shown / s));
+}
 
 inline constexpr StagePreset kStagePresets[] = {
     { "Default", "The v0.5 stage: a mid-sized hall, ORTF at the conductor's spot.",

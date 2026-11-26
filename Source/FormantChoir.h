@@ -44,6 +44,7 @@ struct FormantControl
     float humanize = .7f, vibrato = .6f, breath = .5f;
     float vowel = 0.f;               // manual vowel 0..1 across A E I O U
     float follow = 0.f;              // 0..1 how much the lead's own vowel steers the choir
+    float tractVariation = 0.f;     // opt-in singer spread; 0 preserves the published vocal-tract response
     float formantShift = 1.f;        // 1 = as tabulated; scales all formant frequencies
 };
 
@@ -66,12 +67,13 @@ private:
         double formantFreq[5] {}, formantAmp[5] {};
         oc::Biquad res[5], whisper[3];
         double onsetDelay = 0, gateTime = 0;
+        double tractSpread = 0, bandSpread = 0;   // this singer's own vocal tract, -1..1 (fixed per singer): scaled by HUMANIZE in retune()
         uint32_t seed = 1;
         float noiseLp = 0;
     };
     static double rnd(uint32_t& s) { s = s * 1664525u + 1013904223u; return (s >> 8) / 16777216.0; }
     void retune(Voice& v, int section);
-    double shift = 1.0, tunedShift = 0.0;
+    double shift = 1.0, tunedShift = 0.0, humanizeNow = 0.0, tunedHumanize = -1.0;
     std::array<float, kVowels> tunedWeights { -1.f, -1.f, -1.f, -1.f, -1.f };
     double sr = 48000;
     std::array<Voice, numVoices> voices;

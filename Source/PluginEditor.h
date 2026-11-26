@@ -30,7 +30,7 @@ public:
     void mouseMove(const juce::MouseEvent&) override;
     void mouseExit(const juce::MouseEvent&) override;
     void mouseDoubleClick(const juce::MouseEvent&) override;
-    void showRoomMenuForScreenshot() { showRoomMenu(); } // trigger the same native popup without fabricating menu UI
+    void showRoomMenuForScreenshot() { showRoomMenu(); } // preserve native Quick4 popup entry point
 private:
     OmniChoirAudioProcessor& processor;
     std::array<juce::Image,scenes::kNumScenes> sceneImages;   // loaded on first use; Default and Cathedral share one picture
@@ -64,6 +64,11 @@ private:
     juce::Rectangle<float> leadPillBounds() const;          // the name tag under the lead
     juce::Rectangle<float> stripButton(int voice,bool mute) const;   // vertically stacked S/M controls
     int stripHit(juce::Point<float>) const;                 // voice*2 + (mute?1:0), or -1
+    juce::Rectangle<float> toneButton(int section) const;   // v0.9: the T key beside S for sections 0..3: Normal / Bright / Dark
+    int toneHit(juce::Point<float>) const;                  // the section whose T key is under the pointer, or -1
+    int toneHover=-1;
+    void cycleTone(int section);
+    float sectionX(int section) const;                      // where the section is DRAWN: its stored X widened or narrowed by STAGE SPREAD
     juce::Rectangle<float> roomChipRect() const;            // the room name on the stage: click it for the room menu
     void showRoomMenu();
     juce::Rectangle<float> arrowRect(int side) const;       // 0 left, 1 right: the previous / next stage
@@ -157,7 +162,7 @@ public:
     void showCurtainForScreenshot(float ms) {if(curtain==nullptr) startCurtain();curtain->freezeAt(ms);}
     void showPresetForScreenshot(int index) {processor.applyStyle(index);refreshPresetSelection();}
     void showKeyScaleForScreenshot(int key,int scale) {keyBox.setSelectedId(key+1,juce::sendNotificationSync);scaleBox.setSelectedId(scale+1,juce::sendNotificationSync);}
-     void showRoomMenuForScreenshot() { stage.showRoomMenuForScreenshot(); } // opens the real native Rooms / Position PopupMenu
+    void showRoomMenuForScreenshot() { stage.showRoomMenuForScreenshot(); } // real JUCE Rooms / Position PopupMenu
 private:
     enum class Kind { Knob, Fader, Side };
     enum Page { pageMain=0, pageRoom, pageVoice, pageFollow, pageListen, pageTake, pageStems, numPages };
@@ -198,8 +203,8 @@ private:
     void selectTab(int);
 
     // ROOM page extras
-    juce::TextButton abButton {"ENGINE: FAITHFUL"}, irButton {"ROOMS / LOAD IR"}, autoLevelButton {"AUTO LEVEL: ON"}, grainLockButton {"STEADY NOTES: OFF"};
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> abAttachment, autoLevelAttachment, grainLockAttachment;
+    juce::TextButton abButton {"ENGINE: FAITHFUL"}, irButton {"ROOMS / LOAD IR"}, autoLevelButton {"AUTO LEVEL: ON"}, grainLockButton {"STEADY NOTES: OFF"}, pitchSyncButton {"PITCH SYNC: OFF"};
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> abAttachment, autoLevelAttachment, grainLockAttachment, pitchSyncAttachment;
 
     // LISTEN page (and an Easy-mode button on MAIN)
     PianoRoll roll;

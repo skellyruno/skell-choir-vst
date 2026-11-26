@@ -112,7 +112,7 @@ float GrainVoice::read(const std::vector<float>& history,int write,float samples
 }
 float GrainVoice::process(const std::vector<float>& history,int write,float window,float minDelay) {
     ratio+=.0004f*(targetRatio-ratio);  // smooth tracked note changes
-    phase=frac(phase+(ratio-1.f)/window);
+    phase=frac(phase+(ratio*vibMul-1.f)/window);
     const float other=frac(phase+.5f);
     const float a=std::sin(pi*phase), b=std::sin(pi*other);
     const float s1=read(history,write,minDelay+(1-phase)*window);
@@ -124,12 +124,127 @@ void GrainVoice::processPair(const std::vector<float>& original,
                              const std::vector<float>& excitation,int write,float window,
                              float minDelay,float& raw,float& exc) {
     ratio+=.0004f*(targetRatio-ratio);
-    phase=frac(phase+(ratio-1.f)/window);
+    phase=frac(phase+(ratio*vibMul-1.f)/window);
     const float other=frac(phase+.5f);
     const float a=std::sin(pi*phase),b=std::sin(pi*other);
     const float p1=minDelay+(1-phase)*window,p2=minDelay+(1-other)*window;
     raw=a*a*read(original,write,p1)+b*b*read(original,write,p2);
     exc=a*a*read(excitation,write,p1)+b*b*read(excitation,write,p2);
+}
+
+// ------------------------------------------------------------------------------------------------ SyncVoice
+namespace {
+struct BackPosition { int i,j; float f; };
+BackPosition backPosition(int size,int write,double samplesBack) {
+    double pos=(double)write-samplesBack;
+    while(pos<0) pos+=size;
+    while(pos>=size) pos-=size;
+    const int i=(int)pos, j=(i+1==size?0:i+1);
+    return {i,j,(float)(pos-i)};
+}
+float readAt(const std::vector<float>& data,BackPosition p) {
+    return data[(size_t)p.i]*(1-p.f)+data[(size_t)p.j]*p.f;
+}
+float readBack(const std::vector<float>& data,int write,double samplesBack) {
+    return readAt(data,backPosition((int)data.size(),write,samplesBack));
+}
+}
+
+void SyncVoice::reset(float seed01) {
+    ratio=targetRatio=1.f; delay=oldDelay=0; fade=1.f; fadeInc=0.f; rho=0.f; started=false; jumpCount=pitchedCount=0; rhoSum=0;
+    seed=frac(seed01);   // where in its window this voice starts, so the 16 voices do not all jump together
+}
+
+void SyncVoice::jump(const std::vector<float>& original,int write,float baseDelay,const SyncContext& ctx,float low,float span,float period,bool voiced,float fadeLen) {
+    const std::vector<float>& mark=*ctx.mark;
+    const float aim=low+.5f*span;
+    const bool up=delay<low;                            // delay fell below the window (ratio > 1): jump further back, otherwise forward
+    const float whole=std::max(1.f,std::round((up?aim-(float)delay:(float)delay-aim)/period));
+    float step=(up?1.f:-1.f)*whole*period, refine=0.f, rho=0.f;
+    if (voiced) {
+        // Align the new read point on the waveform: the shift (+-15% of a period) around `step` at which the low-passed signal read
+        // at the old and new delay agrees best, over about one period centred on the read points.
+        const int win=std::max(64,std::min(480,(int)(1.25f*period)));
+        const int reach=std::max(2,(int)(.15f*period));
+        const double oldBack=baseDelay+delay, newBack=oldBack+step;
+        float a[480+2], b[480+2*80+2];
+        // A centred window may extend beyond the write head at short delays.
+        // Move both analysis windows equally into valid past audio; do not add playback latency.
+        const int w=std::min(win,480), r=std::min(reach,80);
+        const double analysisBack=std::max(0.0, double(w/2+r+1)-std::min(oldBack,newBack));
+        for (int i=0;i<w;++i) a[i]=readBack(mark,write,oldBack+analysisBack-(i-w/2));
+        for (int i=0;i<w+2*r+1;++i) b[i]=readBack(mark,write,newBack+analysisBack-(i-r-w/2));
+        double ea=1.e-12; for (int i=0;i<w;++i) ea+=(double)a[i]*a[i];
+        double best=-2,prev=0,next=0,cs[2*80+1]; int bi=0;
+        for (int d=-r;d<=r;++d) {
+            double dot=0,eb=1.e-12;
+            // candidate d means the new read point sits d samples further back (later in the buffer index space of b)
+            for (int i=0;i<w;++i) { const float v=b[i+r-d]; dot+=(double)a[i]*v; eb+=(double)v*v; }
+            const double c=dot/std::sqrt(ea*eb); cs[d+r]=c;
+            if (c>best) { best=c; bi=d; }
+        }
+        prev=bi>-r?cs[bi+r-1]:best; next=bi<r?cs[bi+r+1]:best;
+        const double den=prev-2*best+next;
+        double frac_=0; if (std::fabs(den)>1.e-9 && bi>-r && bi<r) frac_=std::max(-.5,std::min(.5,.5*(prev-next)/den));
+        rho=(float)best;
+        if (rho>=.45f) refine=(float)(bi+frac_);
+    }
+    const bool pitched=voiced && rho>=.45f;
+    // The cross-fade keeps the power constant for the correlation the two read points really have, measured on the full-band signal at
+    // the chosen shift: identical signals fade in amplitude-complementary (no bump), unrelated ones in power (no dip), in-between ones between.
+    float fullRho=0.f;
+    if (pitched) {
+        const int w=std::min(std::max(64,std::min(480,(int)(1.25f*period))),480);
+        const double oldBack=baseDelay+delay, newBack=oldBack+step+refine;
+        const double analysisBack=std::max(0.0, double(w/2+1)-std::min(oldBack,newBack));
+        double ab=0,aa=1.e-12,bb=1.e-12;
+        for (int i=0;i<w;++i) { const float u=readBack(original,write,oldBack+analysisBack-(i-w/2)), v=readBack(original,write,newBack+analysisBack-(i-w/2)); ab+=(double)u*v; aa+=(double)u*u; bb+=(double)v*v; }
+        fullRho=(float)std::max(0.0,std::min(1.0,ab/std::sqrt(aa*bb)));
+    }
+    oldDelay=delay; delay+=step+refine;
+    this->rho=fullRho;
+    if (pitched) { ++pitchedCount; rhoSum+=fullRho; }
+    fadeInc=1.f/(pitched?fadeLen:std::max(1.f,.003f*ctx.sampleRate)); fade=0.f;
+    ++jumpCount;
+}
+
+void SyncVoice::processPair(const std::vector<float>& original,const std::vector<float>& excitation,int write,float baseDelay,
+                            const SyncContext& ctx,float& raw,float& exc) {
+    ratio+=.0004f*(targetRatio-ratio);
+    const float rEff=ratio*vibMul;
+    const float sr=ctx.sampleRate;
+    const bool voiced=ctx.period>0.f && ctx.mark!=nullptr;
+    const float period=voiced?ctx.period:.006f*sr;
+    const float fadeLen=voiced?bound(period,.002f*sr,.012f*sr):.003f*sr;
+    // while the old read point fades out it keeps moving: when ratio > 1 it moves towards "now", so the window starts that far from it
+    const float low=2.f+std::max(0.f,rEff-1.f)*fadeLen;
+    const float span=std::max(std::max(.010f*sr,2.5f*period),2.f*fadeLen);   // measured: longer windows mean fewer but worse-aligned seams
+    const float high=low+span;
+    if (!started) { delay=oldDelay=low+seed*span; started=true; fade=1.f; }
+    const double drift=1.0-(double)rEff;               // a read point moving at `ratio` samples per sample changes its delay by this much
+    delay+=drift;
+    if (fade<1.f) oldDelay+=drift;
+    if (fade>=1.f && (delay<low || delay>high) && ctx.mark!=nullptr) jump(original,write,baseDelay,ctx,low,span,period,voiced,fadeLen);
+    const double limit=(double)original.size()-baseDelay-8.0;
+    delay=std::max(1.0,std::min(limit,delay));          // belt and braces: never read outside the history
+    if (fade<1.f) {
+        fade=std::min(1.f,fade+fadeInc);
+        const float th=.5f*pi*fade, norm=1.f/std::sqrt(1.f+rho*std::sin(2.f*th));   // P = g1^2 + g2^2 + 2 g1 g2 rho = 1
+        const float g1=std::cos(th)*norm, g2=std::sin(th)*norm;
+        oldDelay=std::max(1.0,std::min(limit,oldDelay));
+        const auto oldPos=backPosition((int)original.size(),write,baseDelay+oldDelay);
+        const auto newPos=backPosition((int)original.size(),write,baseDelay+delay);
+        raw=g1*readAt(original,oldPos)+g2*readAt(original,newPos);
+        // The engine prepares matching raw/excitation histories.
+        if (excitation.size()==original.size())
+            exc=g1*readAt(excitation,oldPos)+g2*readAt(excitation,newPos);
+        else
+            exc=g1*readBack(excitation,write,baseDelay+oldDelay)+g2*readBack(excitation,write,baseDelay+delay);
+    } else {
+        const auto pos=backPosition((int)original.size(),write,baseDelay+delay);
+        raw=readAt(original,pos);
+        exc=excitation.size()==original.size()?readAt(excitation,pos):readBack(excitation,write,baseDelay+delay);
+    }
 }
 
 void ChoirEffect::updateLPC() {
@@ -141,11 +256,18 @@ void ChoirEffect::updateLPC() {
     constexpr int frame=720;
     float corr[lpcOrder+1] {};
     const int size=(int)inputHistory.size();
+    // Copy the past window once; the eleven autocorrelation passes then walk
+    // contiguous samples in the original summation order, without ring modulo.
+    float past[frame+lpcOrder];
+    int read=write;
+    for (int n=0;n<frame+lpcOrder;++n) {
+        if (--read<0) read=size-1;
+        past[n]=inputHistory[(size_t)read];
+    }
     for(int lag=0;lag<=lpcOrder;++lag) {
         double sum=0;
         for(int n=0;n<frame;++n) {
-            const float a=inputHistory[(size_t)((write-1-n+size)%size)];
-            const float b=inputHistory[(size_t)((write-1-n-lag+size)%size)];
+            const float a=past[n], b=past[n+lag];
             sum+=(double)a*b;
         }
         corr[lag]=(float)(sum/frame);
@@ -186,6 +308,8 @@ void ChoirEffect::prepare(double sampleRate) {
     minDelay=.009f*sr;
     inputHistory.assign((size_t)(sr*.19f)+32,0.f);
     excitationHistory.assign(inputHistory.size(),0.f);
+    markHistory.assign(inputHistory.size(),0.f);
+    markCoef=1.f-std::exp(-2.f*pi*1500.f/sr);
     room.prepare(sr);
     tracker.prepare(sr);
     formant.prepare(sr);
@@ -194,6 +318,11 @@ void ChoirEffect::prepare(double sampleRate) {
 void ChoirEffect::reset() {
     std::fill(inputHistory.begin(),inputHistory.end(),0.f);
     std::fill(excitationHistory.begin(),excitationHistory.end(),0.f);
+    std::fill(markHistory.begin(),markHistory.end(),0.f); markLp1=markLp2=0.f; syncPeriod=0.f; fresh=true; syncMix=p.pitchSync?1.f:0.f;
+    for (int i=0;i<(int)syncLayers.size();++i) syncLayers[(size_t)i].reset(.6180339887f*(float)(i+1));
+    vibSlow=-1.f; vibDev=0.f; vibActive=false; vibRing.fill(0.f); vibPos=0;
+    for (auto& l:layers) l.vibMul=1.f;
+    for (auto& l:syncLayers) l.vibMul=1.f;
     lpc.fill(0);for(auto& state:formantState)state.fill(0);
     windowNow=lockedWindow=window;
     formantWrite=lpcCounter=0;
@@ -225,6 +354,7 @@ void ChoirEffect::beginScan() {
 }
 void ChoirEffect::setParameters(const FXParams& params) {
     p=params;
+    if (fresh) syncMix=p.pitchSync?1.f:0.f;
     room.configure(p);
     updateStage();
     updateTargetRatios();
@@ -262,6 +392,7 @@ void ChoirEffect::updateTone(const std::array<float,sections>& distance) {
 }
 void ChoirEffect::setVoiceParameters(const FXParams& params) {
     p=params;
+    if (fresh) syncMix=p.pitchSync?1.f:0.f;
     updateTone({0.f,0.f,0.f,0.f});
     updateTargetRatios();
 }
@@ -356,6 +487,7 @@ void ChoirEffect::processVoices(float mono,float* voicesOut) {
             singerDelaySeconds[(size_t)i]=depth*.003f*singerTimeWalk[(size_t)i];
             layers[(size_t)i].targetRatio=
                 std::exp2(bound(singerBaseSemis[(size_t)i]+cents,-24.f,24.f)/12.f);
+            syncLayers[(size_t)i].targetRatio=layers[(size_t)i].targetRatio;
         }
     }
     motionSeconds+=1.f/sr;
@@ -370,14 +502,71 @@ void ChoirEffect::processVoices(float mono,float* voicesOut) {
     if(++lpcCounter>=2048) {lpcCounter=0;updateLPC();}
     float excitation=pitchedInput;
     const int historySize=(int)inputHistory.size();
+    int excitationRead=write;
     for(int j=0;j<lpcOrder;++j) {
-        const int idx=(write-j-1+historySize)%historySize;
-        excitation+=lpc[(size_t)j]*inputHistory[(size_t)idx];
+        if (--excitationRead<0) excitationRead=historySize-1;
+        excitation+=lpc[(size_t)j]*inputHistory[(size_t)excitationRead];
     }
     excitation=bound(excitation,-2.f,2.f);
     inputHistory[(size_t)write]=pitchedInput;
     excitationHistory[(size_t)write]=excitation;
+    // pitchSync: the engine in use cross-fades over 20 ms when the button is pressed; while it is 0 nothing below changes the output
+    {
+        const float target=p.pitchSync?1.f:0.f, step=1.f/(.02f*sr);
+        syncMix=syncMix<target?std::min(target,syncMix+step):std::max(target,syncMix-step);
+        fresh=false;
+    }
+    const bool useSync=syncMix>0.f, useLegacy=syncMix<1.f;
+    SyncContext syncCtx;
+    // Keep marks current during the legacy engine, including while Pitch Sync is off.
+    // Otherwise enabling it on a held vocal searches stale marks from an earlier phrase.
+    markLp1+=markCoef*(pitchedInput-markLp1); markLp2+=markCoef*(markLp1-markLp2);
+    markHistory[(size_t)write]=markLp2;
+    if (useSync) {
+        if (tracker.midi()>=0.f && tracker.confidence()>.55f) {
+            if (pitchUpdated || syncPeriod<=0.f) syncPeriod=bound(sr/(440.f*std::pow(2.f,(tracker.midi()-69.f)/12.f)),sr/1000.f,sr/60.f);
+        } else syncPeriod=0.f;
+        syncCtx.sampleRate=sr; syncCtx.period=syncPeriod; syncCtx.mark=&markHistory;
+    } else syncPeriod=0.f;
     steerWindow();
+    constexpr float kVibGain=.9f;   // the tracker's 32 ms window smooths the vibrato it measures; calibrated in tests/vibrato_stack_tests.cpp
+    // VIBRATO SPREAD (opt-in): every voice copies the lead's vibrato because it re-plays the lead. Here each singer bends it by their own amount (a
+    // fixed, symmetric set of depths, scaled by the knob), so the section's vibratos no longer move in lockstep. The lead's slow pitch is followed with a
+    // ~0.5 s one-pole; the fast part of the pitch around it is the vibrato. A note change (more than half a semitone away) re-anchors it at once.
+    {
+        if (tracker.midi()<0.f) { vibSlow=-1.f; vibDev=0.f; }
+        else if (pitchUpdated) {
+            const float m=tracker.midi();
+            if (vibSlow<0.f || std::fabs(m-vibSlow)>.6f) { vibSlow=m; vibDev=0.f; }
+            else { vibSlow+=.016f*(m-vibSlow); vibDev=bound(m-vibSlow,-1.f,1.f); }
+        }
+        const float vs=bound(p.vibratoSpread,0.f,1.f);
+        if (vs>0.f) vibActive=true;
+        if (vibActive) {
+            // The tracker reports the pitch ~24 ms late and averages over 32 ms, while the voice carries the lead's own vibrato after its read delay
+            // (about 45 ms for the two grains, 5 ms for the synchronous shifter). Read the deviation back by the difference so the two bends line up.
+            vibRing[(size_t)vibPos]=vibDev;
+            const float dEff=syncMix*.005f*sr+(1.f-syncMix)*(minDelay+.5f*windowNow);
+            const int back=(int)bound(dEff-tracker.latencySeconds()*sr,0.f,(float)vibRing.size()-2.f);
+            const float dev=vibRing[(size_t)((vibPos-back+(int)vibRing.size())%(int)vibRing.size())];
+            vibPos=(vibPos+1)%(int)vibRing.size();
+            static const float spreadSet[4]={-1.f,-.35f,.35f,1.f};
+            bool settled=vs<=0.f;
+            // Four distinct targets are shared across the sixteen singers.
+            // Preserve the original expression and mapping, avoid redundant exp2 calls.
+            float targets[4]={1.f,1.f,1.f,1.f};
+            if (vs>0.f) for (int j=0;j<4;++j)
+                targets[j]=std::exp2(kVibGain*vs*spreadSet[j]*dev/12.f);
+            for (int i=0;i<sections;++i) for (int j=0;j<singers;++j) {
+                const int k=i*singers+j;
+                const float target=targets[(j+i)%4];
+                float& m=layers[(size_t)k].vibMul; m+=.007f*(target-m);
+                if (vs<=0.f && std::fabs(m-1.f)>1.e-6f) settled=false;
+                syncLayers[(size_t)k].vibMul=m;
+            }
+            if (vs<=0.f && settled) { for (int k=0;k<sections*singers;++k) layers[(size_t)k].vibMul=syncLayers[(size_t)k].vibMul=1.f; vibActive=false; }
+        }
+    }
     for(int i=0;i<sections;++i) {
         for(int j=0;j<singers;++j) {
             const int k=i*singers+j;
@@ -385,12 +574,25 @@ void ChoirEffect::processVoices(float mono,float* voicesOut) {
             // distinction. This is an approximation, not neural identity cloning.
             const float extra=(3.f*j+2.f*i)*.0015f*sr*p.humanize;
             float x=0,exc=0;
-            layers[(size_t)k].processPair(inputHistory,excitationHistory,write,
+            if (useLegacy) layers[(size_t)k].processPair(inputHistory,excitationHistory,write,
                                           windowNow,minDelay+extra+singerDelaySeconds[(size_t)k]*sr,x,exc);
+            if (useSync) {
+                // the same HUMANIZE spread (extra) and wander, on a much smaller floor: the seams keep the read point close behind "now"
+                float xs=0,es=0;
+                syncLayers[(size_t)k].processPair(inputHistory,excitationHistory,write,
+                                                  .005f*sr+extra+singerDelaySeconds[(size_t)k]*sr,syncCtx,xs,es);
+                // the two-grain shifter loses ~1.1 dB where its out-of-phase grains partly cancel; the seams here do not, so trim to the same level
+                // (measured on two real vocals: +1.06 and +1.17 dB) and switching engines does not change the mix
+                constexpr float syncTrim=.88f;
+                xs*=syncTrim; es*=syncTrim;
+                if (useLegacy) { x=(1.f-syncMix)*x+syncMix*xs; exc=(1.f-syncMix)*exc+syncMix*es; }
+                else { x=xs; exc=es; }
+            }
             float formed=exc;
+            int formantRead=formantWrite;
             for(int tap=0;tap<lpcOrder;++tap) {
-                const int idx=(formantWrite-tap-1+lpcOrder)%lpcOrder;
-                formed-=lpc[(size_t)tap]*formantState[(size_t)k][(size_t)idx];
+                if (--formantRead<0) formantRead=lpcOrder-1;
+                formed-=lpc[(size_t)tap]*formantState[(size_t)k][(size_t)formantRead];
             }
             formed=bound(formed,-1.6f,1.6f);
             formantState[(size_t)k][(size_t)formantWrite]=formed;
@@ -411,10 +613,10 @@ void ChoirEffect::processVoices(float mono,float* voicesOut) {
     blendNow+=.002f*(blendTarget-blendNow);
     if (blendNow>.001f || blendTarget>0.f) {
         std::array<float,numVoices> ratios {}, synth {};
-        for (int k=0;k<numVoices;++k) ratios[(size_t)k]=layers[(size_t)k].ratio;
+        for (int k=0;k<numVoices;++k) ratios[(size_t)k]=syncMix>=.5f?syncLayers[(size_t)k].ratio:layers[(size_t)k].ratio;
         FormantControl fc;
         fc.midi=tracker.midi(); fc.ratios=ratios.data(); fc.gate=outputEnv;
-        fc.humanize=p.humanize; fc.vibrato=p.vibrato; fc.breath=p.choirBreath; fc.vowel=p.choirVowel; fc.follow=p.vowelFollow;
+        fc.humanize=p.humanize; fc.tractVariation=p.vibratoSpread; fc.vibrato=p.vibrato; fc.breath=p.choirBreath; fc.vowel=p.choirVowel; fc.follow=p.vowelFollow;
         formant.process(mono,fc,synth.data());
         for (int k=0;k<numVoices;++k)
             voicesOut[k]=(1.f-blendNow)*voicesOut[k]+blendNow*synth[(size_t)k]*singerLevelGain[(size_t)k];

@@ -34,8 +34,10 @@ int main(int argc, char** argv)
         bool matchDefault = false; CHECK(boolDefault(src, "levelMatch", matchDefault), "AUTO LEVEL (levelMatch) is not declared in PluginProcessor.cpp");
         CHECK(matchDefault == d.levelMatch, "AUTO LEVEL default in the plugin (%d) differs from tests/test_support.h (%d)", (int) matchDefault, (int) d.levelMatch);
         bool lockDefault = true; CHECK(boolDefault(src, "grainLock", lockDefault), "STEADY NOTES (grainLock) is not declared in PluginProcessor.cpp");
-        CHECK(!lockDefault && !d.lockGrains && !choir::FXParams().lockGrains, "STEADY NOTES must default to OFF everywhere (plugin %d, test defaults %d, engine %d): the default sound must not change", (int) lockDefault, (int) d.lockGrains, (int) choir::FXParams().lockGrains);
-        CHECK(src.find("p.lockGrains=read(raw.grainLock)>.5f") != std::string::npos, "the grainLock parameter is not passed to FXParams::lockGrains");
+        CHECK(!lockDefault && !d.lockGrains && !choir::FXParams().lockGrains && !d.pitchSync && !choir::FXParams().pitchSync, "STEADY NOTES must default to OFF everywhere (plugin %d, test defaults %d/%d, engine %d/%d): the default sound must not change", (int) lockDefault, (int) d.lockGrains, (int) d.pitchSync, (int) choir::FXParams().lockGrains, (int) choir::FXParams().pitchSync);
+        CHECK(src.find("p.lockGrains=read(raw.grainLock)>.5f") != std::string::npos, "legacy grainLock must still control the legacy window");
+        bool syncDefault = true; CHECK(boolDefault(src, "pitchSync", syncDefault) && !syncDefault, "new pitchSync must default to off");
+        CHECK(src.find("p.pitchSync=read(raw.pitchSync)>.5f") != std::string::npos, "pitchSync needs an independent host parameter");
         std::vector<std::string> c; layoutArgs(src, "\"choirLevel\"", c);
         CHECK(std::fabs(num(c[3]) + choir::StagedChoir::kChoirLevelMaxDb) < 1e-4 && std::fabs(num(c[4]) - choir::StagedChoir::kChoirLevelMaxDb) < 1e-4,
               "CHOIR LEVEL range in PluginProcessor.cpp (%s..%s) must equal +-kChoirLevelMaxDb", c[3].c_str(), c[4].c_str());

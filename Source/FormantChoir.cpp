@@ -137,6 +137,14 @@ void FormantChoir::prepare(double sampleRate)
         v.vibRate = 4.6 + rnd(v.seed) * 1.5; v.vibDepth = 14 + rnd(v.seed) * 18; v.vibDelay = .15 + rnd(v.seed) * .2;
         v.attack = .04 + rnd(v.seed) * .09; v.release = .12 + rnd(v.seed) * .16; v.onsetDelay = rnd(v.seed) * .045;
         v.scoopCents = 30 + rnd(v.seed) * 50; v.scoopTime = .05 + rnd(v.seed) * .04;
+        // Four singers of one section are four different people: each gets a fixed offset in vocal-tract length (formant frequencies) and
+        // in how damped the resonances are, spread symmetrically so a section's average stays on the tabulated vowel. Drawn from the singer
+        // index, not from v.seed, so the random stream (and with singer spread at 0 the whole sound) is exactly what it was.
+        {
+            static const double spread[4] = { -1.0, -.35, .35, 1.0 };
+            const int j = k % perSection, sec = k / perSection;
+            v.tractSpread = spread[(j + sec) % 4]; v.bandSpread = spread[(j * 3 + sec + 1) % 4];
+        }
         retune(v, k / perSection);
     }
     reset();
@@ -160,7 +168,8 @@ void FormantChoir::retune(Voice& v, int section)
             const double wt = weightsSmoothed[(size_t) vw]; const Formant& t = kTable[section][vw][f];
             lf += wt * std::log(t.hz); lbw += wt * std::log(t.bw); db += wt * t.db;
         }
-        const double hz = std::exp(lf) * shift, bw = std::exp(lbw);
+        // Singer spread 0 multiplies by exactly 1.0: unchanged. At 1: +-6% on the formant frequencies, +-15% on the bandwidths, per singer
+        const double hz = std::exp(lf) * shift * (1.0 + .06 * humanizeNow * v.tractSpread), bw = std::exp(lbw) * (1.0 + .15 * humanizeNow * v.bandSpread);
         v.formantFreq[f] = hz; v.formantAmp[f] = std::pow(10.0, db / 20.0);
         v.res[f].setBandpass(hz, std::max(1.0, hz / bw), sr);
         if (f < 3) v.whisper[f].setBandpass(hz, 2.5, sr);
@@ -200,15 +209,16 @@ void FormantChoir::process(float in, const FormantControl& c, float* out)
         for (int v = 0; v < kVowels; ++v) weightsSmoothed[(size_t) v] += .0008f * (weights[(size_t) v] - weightsSmoothed[(size_t) v]);
     }
     shift = clampv((double) c.formantShift, .6, 1.6);
+    humanizeNow = clampv((double) c.humanize, 0.0, 1.0) * clampv((double) c.tractVariation, 0.0, 1.0);
     if (++tick >= 32)
     {
         tick = 0;
-        float moved = (float) std::fabs(shift - tunedShift);
+        float moved = (float) std::max(std::fabs(shift - tunedShift), .06 * std::fabs(humanizeNow - tunedHumanize));
         for (int v = 0; v < kVowels; ++v) moved = std::max(moved, std::fabs(weightsSmoothed[(size_t) v] - tunedWeights[(size_t) v]));
         if (moved > 2e-4f)     // coefficients only need recomputing while the vowel is actually moving
         {
             for (int k = 0; k < numVoices; ++k) retune(voices[(size_t) k], k / perSection);
-            tunedWeights = weightsSmoothed; tunedShift = shift;
+            tunedWeights = weightsSmoothed; tunedShift = shift; tunedHumanize = humanizeNow;
         }
     }
 

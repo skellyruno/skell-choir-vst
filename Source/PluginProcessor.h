@@ -5,6 +5,7 @@
 #include "StagedChoir.h"
 #include "StagePresets.h"
 #include "StylePresets.h"
+#include "StackPresets.h"
 #include "MidiChord.h"
 #include "Scales.h"
 #include "StyleFile.h"
@@ -77,6 +78,8 @@ public:
     static constexpr int kNumBuiltInRooms = 3;
     static const char* builtInRoomName(int index);   // Cathedral, Stone Chapel, Small Hall: synthetic impulse responses shipped inside the plugin
     void chooseBuiltInRoom(int index);               // loads it and, if the HALL is off, brings the HALL up so the room can be heard
+    void resetSpreads();                             // VIB SPREAD, STAGE SPREAD, PHRASE BREATH and the four T keys back to neutral; nothing else
+    void applyStack(int index);                      // who sings: which sections are in, harmony, looseness; never the room, lead level or OUTPUT
     void applyStyle(int index);                      // a whole sound: a room + how the singers sing; never lead level, output or solo/mute
     void surpriseMe();                               // a random but musical style
     int chordNote(int section) const { return chordView[(size_t) section].load(std::memory_order_relaxed); }   // the stage shows the chord being held (-1 = none)
@@ -119,7 +122,8 @@ private:
         std::atomic<float>* roomSize=nullptr,*roomSeconds=nullptr,*absorption=nullptr,*diffusion=nullptr;
         std::atomic<float>* wet=nullptr,*mix=nullptr,*master=nullptr;
         std::atomic<float>* leadX=nullptr,*leadY=nullptr,*leadGain=nullptr,*humanize=nullptr,*formant=nullptr,*hall=nullptr,*hallSeconds=nullptr;
-        std::atomic<float>* voiceBlend=nullptr,*choirVowel=nullptr,*vowelFollow=nullptr,*choirBreath=nullptr,*vibrato=nullptr,*classicStage=nullptr,*choirLevel=nullptr,*levelMatch=nullptr,*grainLock=nullptr,*choirSize=nullptr,*consonants=nullptr,*swell=nullptr,*keyRoot=nullptr,*scale=nullptr,*pulseRate=nullptr,*pulseDepth=nullptr;
+        std::atomic<float>* voiceBlend=nullptr,*choirVowel=nullptr,*vowelFollow=nullptr,*choirBreath=nullptr,*stageSpread=nullptr,*phraseBreath=nullptr,*toneAmount=nullptr,*vibeSpread=nullptr,*vibrato=nullptr,*classicStage=nullptr,*choirLevel=nullptr,*levelMatch=nullptr,*grainLock=nullptr,*pitchSync=nullptr,*choirSize=nullptr,*consonants=nullptr,*swell=nullptr,*keyRoot=nullptr,*scale=nullptr,*pulseRate=nullptr,*pulseDepth=nullptr;
+        std::array<std::atomic<float>*,4> tone {};            // 0 normal, 1 bright, 2 dark, per section (v0.9)
         std::array<std::atomic<float>*,5> sectionState {};   // 0 normal, 1 solo, 2 mute; 0..3 the sections, 4 the lead
     } raw;
     choir::FXParams readParams() const;

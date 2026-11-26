@@ -25,6 +25,9 @@ void StagedChoir::prepare(double sampleRate)
     fx.prepare(sampleRate);
     consonantDetector.prepare(sampleRate);
     consonantIn.assign((size_t) block, 0.f);
+    toneCoef = (float) (1.0 - std::exp(-6.283185307179586 * 2500.0 / sampleRate));   // the shelf's corner: highs above ~2.5 kHz
+    pbRefDecay = (float) std::exp(-1.0 / (6.0 * sampleRate));
+    pbHi = (float) (1.0 - std::exp(-6.283185307179586 * 6500.0 / sampleRate)); pbLo = (float) (1.0 - std::exp(-6.283185307179586 * 450.0 / sampleRate));   // the inhale is air: ~450 Hz to ~6.5 kHz
 
     oc::StageConfig cfg;
     cfg.sampleRate = sampleRate; cfg.engineBlock = block;
@@ -79,6 +82,10 @@ void StagedChoir::reset()
     for (auto& v : voiceBuf) std::fill(v.begin(), v.end(), 0.f);
     pos = 0; wetNow = 0; leadGainNow = p.leadGain; lastClassic = p.classicStage; trimNow = trimGoal();
     swellEnv = swellRef = 0; swellActive = 0; pulsePhase = 0;
+    for (auto& g : toneGain) g = 0.f;
+    pbFast = pbRef = pbPeak = 0.f; pbQuiet = 0; pbSince = 1 << 30; pbArmed = false; for (auto& t : pbT) t = 1 << 30;
+    for (int k = 0; k < N; ++k) { pbLp1[k] = pbLp2[k] = 0.f; pbRng[k] = 2463534242u + 2654435761u * (uint32_t) (k + 1); }
+    for (auto& l : toneLow) l = 0.f;
     corr = 1.f; wid = 0.f; peakL = peakR = 0.f;
 }
 
@@ -291,6 +298,61 @@ void StagedChoir::process(const float* inL, const float* inR, float* outL, float
                 shape *= 1.f - p.pulseDepth * (float) (.5 - .5 * std::cos(6.283185307179586 * phase));
             }
             for (int k = 0; k < N; ++k) voiceBuf[(size_t) k][(size_t) pos] = v[k] * trimNow * shape;
+            // PHRASE BREATH: when you start singing after a pause (a quarter second of near-silence), the choir takes a soft breath with you.
+            // The choir cannot breathe before you sing (it only hears you start), so the inhale lands with your first note: the basses first, then tenors, altos and
+            // sopranos a few milliseconds apart, like singers rather than one gasp. It is sized to the note you actually start with (a whispered entry after a
+            // loud passage gets a whispered breath) and is longer and softer for a soft entry, shorter for a loud one.
+            if (p.phraseBreath > 0.f)
+            {
+                const float a = std::fabs(mono);
+                pbFast += (a > pbFast ? .02f : .002f) * (a - pbFast);
+                pbRef = std::max(pbFast, pbRef * pbRefDecay);           // the lead's recent peak, forgotten over ~6 s
+                if (pbFast < .02f * pbRef + 2.e-5f) { const long threshold = (long) (.25 * sr); if (pbQuiet <= threshold) ++pbQuiet; if (pbQuiet > threshold) pbArmed = true; }   // a quarter second of near-silence arms the breath
+                else
+                {
+                    pbQuiet = 0;
+                    if (pbArmed && pbFast > 2.5e-3f)                                                   // the first note after the pause is up (above about -52 dBFS)
+                    {
+                        pbArmed = false; pbSince = 0; pbPeak = 0.f;
+                        static const double stagger[4] = { .024, .016, .008, 0. };                     // soprano, alto, tenor, bass: the low voices breathe first
+                        for (int s = 0; s < sections; ++s) pbT[s] = -(long) (stagger[s] * sr);
+                    }
+                }
+                if (pbSince < (long) (.06 * sr)) { pbPeak = std::max(pbPeak, pbFast); ++pbSince; }
+                const float soft = std::min(1.f, std::max(0.f, (.2f - pbPeak) / .17f));                // 0 = a loud entry (>= -14 dBFS), 1 = a soft one (<= -30 dBFS)
+                const double tau = .09 * (.75 + .95 * soft);                                           // the inhale lasts 0.07 s (loud) to 0.16 s (soft)
+                for (int s = 0; s < sections; ++s)
+                {
+                    if (pbT[s] >= (long) (.7 * sr)) continue;
+                    if (pbT[s] < 0) { ++pbT[s]; continue; }
+                    const double t = (double) pbT[s] / sr; ++pbT[s];
+                    const float env = t < .03 ? (float) (t / .03) : (float) std::exp(-(t - .03) / tau);
+                    const float amp = p.phraseBreath * .6f * pbPeak * env * .25f * trimNow;            // 16 independent noises add up to ~4x one of them
+                    for (int j = 0; j < ChoirEffect::voicesPerSection; ++j)
+                    {
+                        const int k = s * ChoirEffect::voicesPerSection + j; uint32_t& r = pbRng[k]; r ^= r << 13; r ^= r >> 17; r ^= r << 5;
+                        const float n = (float) ((double) r / 2147483648.0 - 1.0);
+                        pbLp1[k] += pbHi * (n - pbLp1[k]); pbLp2[k] += pbLo * (pbLp1[k] - pbLp2[k]);
+                        voiceBuf[(size_t) k][(size_t) pos] += amp * (pbLp1[k] - pbLp2[k]) * 3.f;       // band-pass, made up to a usable level
+                    }
+                }
+            }
+            else { pbQuiet = 0; pbSince = 1 << 30; pbFast = pbRef = 0.f; pbArmed = false; for (auto& t : pbT) t = 1 << 30; }
+            // TONE (per section, the T button on the stage): a high shelf on that section's singers, about +3.5 dB (bright) or -4 dB (dark) at 4-7 kHz, up to +4.6 and -8 dB at the very top, from a corner at ~2.5 kHz.
+            // At Normal the shelf amount is exactly 0 and the singer passes through untouched, so the default sound is bit-identical.
+            for (int s = 0; s < sections; ++s)
+            {
+                const int tone = p.sectionTone[(size_t) s];
+                const float target = (tone == 1 ? .7f : tone == 2 ? -.6f : 0.f) * p.toneAmount;   // TONE AMOUNT 1 = as designed, 0 = no tone at all, 1.6 = stronger
+                if (toneGain[s] == target) { if (target == 0.f) { for (int j = 0; j < ChoirEffect::voicesPerSection; ++j) toneLow[s * ChoirEffect::voicesPerSection + j] = voiceBuf[(size_t) (s * ChoirEffect::voicesPerSection + j)][(size_t) pos]; continue; } }
+                else { toneGain[s] += .002f * (target - toneGain[s]); if (std::fabs(target - toneGain[s]) < 1.e-4f) toneGain[s] = target; }   // ~10 ms: no click when the button is pressed
+                for (int j = 0; j < ChoirEffect::voicesPerSection; ++j)
+                {
+                    const size_t k = (size_t) (s * ChoirEffect::voicesPerSection + j); float& x = voiceBuf[k][(size_t) pos];
+                    toneLow[k] += toneCoef * (x - toneLow[k]);
+                    x += toneGain[s] * (x - toneLow[k]);
+                }
+            }
         }
         outL[i] = outL_[pos];
         if (outR) outR[i] = outR_[pos];

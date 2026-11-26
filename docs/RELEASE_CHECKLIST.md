@@ -1,6 +1,6 @@
 # SkellyChoir 0.9.0 — Windows VST3 private-preview release checklist
 
-This release candidate is **Windows x64 VST3 only**. Do not add a Standalone, AU, macOS or machine-wide installer target as part of this release work. The package remains private-preview only until every owner and host-acceptance gate below is closed.
+This release candidate is **Windows x64 VST3 only**. Do not add a Standalone, AU, macOS or machine-wide installer target as part of this release work. The package remains an unsigned testing preview; commercial and host acceptance gates remain open.
 
 ## Automated exact-head gates
 
@@ -24,9 +24,9 @@ This release candidate is **Windows x64 VST3 only**. Do not add a Standalone, AU
    - Run the real package with `-WhatIf` and prove that neither the destination nor backup directory is created.
    - The installer defaults to the per-user `%LOCALAPPDATA%\\Programs\\Common\\VST3` directory. It must not require administrator elevation or modify registry entries, other plugins, presets, DAW projects or host state.
 
-5. **Installable artifact confidentiality**
-   - Gate the `SkellyChoir-Windows-VST3` upload on `github.repository_visibility == 'private'`.
-   - Public-repository runs must still build, run native tests, verify the AMD64 PE32+ bundle, run pluginval and installer self-tests, but must not upload the VST3 bundle, installer or provenance as an Actions artifact.
+5. **Downloadable testing artifact**
+   - Owner-authorized 2026-11-25: upload `SkellyChoir-Windows-VST3` regardless of visibility, after validation.
+   - Native tests, AMD64 PE32+ verification, pluginval, provenance and installer self-tests must pass before upload. Public Actions artifacts may be accessible to others; never include private vocal fixtures or source archives.
    - UI screenshot artifacts are non-installable QA evidence and remain separate.
 
 6. **Real editor screenshot workflow**

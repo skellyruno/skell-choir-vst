@@ -143,5 +143,18 @@ int main()
         double sec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
         std::printf("[6] 10 s of audio, 16 voices + vowel follower: %.2f s = %.1fx realtime\n", sec, 10 / sec); assert(sum > 1);
     }
+    // 7. four singers in a section are four different throats: at HUMANIZE 0 they share one vocal tract (unchanged sound), above 0 each gets its own formants
+    {
+        auto spreadDb = [&](float humanize, double& lowSpread) {
+            FormantControl c = base; c.humanize = humanize; c.tractVariation = 1.f; c.vibrato = 0.f; c.breath = 0.f;
+            auto r = run(3.0, 200, .2, c, A_t, 4, ratios); double hi[4], lo[4];
+            for (int j = 0; j < 4; ++j) { const auto& o = r.out[8 + j]; const double tot = bandEnergy(o, (size_t) (2.0 * sr), 150, 6000);
+                hi[j] = 10 * std::log10(bandEnergy(o, (size_t) (2.0 * sr), 2200, 3400) / tot); lo[j] = 10 * std::log10(bandEnergy(o, (size_t) (2.0 * sr), 500, 900) / tot); }
+            lowSpread = *std::max_element(lo, lo + 4) - *std::min_element(lo, lo + 4);
+            return *std::max_element(hi, hi + 4) - *std::min_element(hi, hi + 4); };
+        double l0, l7, l1; const double s0 = spreadDb(0.f, l0), s7 = spreadDb(.7f, l7), s1 = spreadDb(1.f, l1);
+        std::printf("[7] tenor singers' spectral spread (F1 band | F3 band): humanize 0 %.2f | %.2f dB, .7 %.2f | %.2f dB, 1 %.2f | %.2f dB\n", l0, s0, l7, s7, l1, s1);
+        assert(s0 < .3 && l0 < .3); assert(std::max(s7, l7) > 1.0); assert(std::max(s1, l1) >= std::max(s7, l7) - .2);
+    }
     std::printf("ALL FORMANT CHOIR TESTS PASSED\n");
 }

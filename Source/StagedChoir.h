@@ -17,6 +17,7 @@
 #include "Consonants.h"
 #include "Stage/Stage.h"
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 
@@ -114,6 +115,10 @@ private:
     std::vector<float> consonantIn;                // this block's clean consonant signal, mixed in after the choir (sized in prepare)
     double pulsePhase = 0;                        // in beats, advanced per sample and re-synced to the host position every block
     float swellEnv = 0, swellRef = 0; double swellActive = 0;
+    // PHRASE BREATH: the lead's fast level and its slowly decaying peak, how long it has been quiet, the inhale's envelope, and each singer's own filtered noise
+    float pbFast = 0.f, pbRef = 0.f, pbPeak = 0.f; long pbQuiet = 0, pbSince = 1 << 30, pbT[4] { 1 << 30, 1 << 30, 1 << 30, 1 << 30 }; bool pbArmed = false;
+    float pbLp1[N] {}, pbLp2[N] {}; uint32_t pbRng[N] {}; float pbHi = .5f, pbLo = .05f, pbRefDecay = 1.f;
+    float toneGain[4] {}, toneLow[N] {}, toneCoef = .3f;   // TONE: the shelf amount per section (smoothed) and each singer's low-pass state
     float trimNow = kVoiceTrim;                   // smoothed kVoiceTrim * CHOIR LEVEL, so turning the dial never zippers
     bool lastClassic = false, stemsWanted = false, lastStems = false;
     float corr = 1.f, wid = 0.f, peakL = 0.f, peakR = 0.f;
