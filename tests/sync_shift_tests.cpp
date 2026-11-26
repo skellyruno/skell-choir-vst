@@ -169,6 +169,30 @@ int main(int argc, char** argv)
     const std::string dir = argc > 1 ? argv[1] : "tests/data";
     const int sr = 48000;
 
+    // A low voice at a short delay must not correlate against stale ring slots
+    // beyond the write head. Identical recent histories must produce identical seams.
+    {
+        constexpr int size=4096, write=2048;
+        constexpr float rate=16000.f, period=240.f;
+        std::vector<float> a(size), b(size);
+        for (int i=0;i<size;++i) {
+            const float phase=(i-write)*2.f*3.14159265358979323846f/period;
+            a[i]=b[i]=.65f*std::sin(phase)+.2f*std::sin(3.f*phase+.4f);
+        }
+        for (int i=write+1;i<write+512;++i) b[i]=.9f*std::sin(i*1.37f);
+        SyncVoice x,y; x.reset(0.f); y.reset(0.f);
+        x.ratio=y.ratio=x.targetRatio=y.targetRatio=1.1f;
+        const SyncContext ca{rate,period,&a}, cb{rate,period,&b};
+        float ra,rb,ea,eb;
+        x.processPair(a,a,write,80.f,ca,ra,ea);
+        y.processPair(b,b,write,80.f,cb,rb,eb);
+        CHECK(x.jumps()==1 && y.jumps()==1, "causal seam regression did not exercise a jump");
+        CHECK(x.pitchedJumps()==1 && y.pitchedJumps()==1, "causal seam should align the voiced signal");
+        CHECK(ra==rb && ea==eb && x.meanSeamRho()==y.meanSeamRho(),
+              "pitch seam read stale ring slots: correlation %.9g / %.9g", x.meanSeamRho(), y.meanSeamRho());
+        std::printf("[causal seam] identical recent histories give identical alignment and output\n");
+    }
+
     // 1. OFF is the original sound: the new engine does not run at all; ON it runs, deterministically
     {
         const auto x = tone(sr, 2.0, 196, 0);

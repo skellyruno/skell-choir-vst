@@ -162,13 +162,13 @@ void SyncVoice::jump(const std::vector<float>& original,int write,float baseDela
         const int win=std::max(64,std::min(480,(int)(1.25f*period)));
         const int reach=std::max(2,(int)(.15f*period));
         const double oldBack=baseDelay+delay, newBack=oldBack+step;
-        const int newBase=(int)std::floor(newBack);
-        const double newFrac=newBack-newBase;
         float a[480+2], b[480+2*80+2];
-        // keep the buffers inside their fixed size even for a very low voice (period is capped by the tracker at ~1/60 Hz)
+        // A centred window may extend beyond the write head at short delays.
+        // Move both analysis windows equally into valid past audio; do not add playback latency.
         const int w=std::min(win,480), r=std::min(reach,80);
-        for (int i=0;i<w;++i) a[i]=readBack(mark,write,oldBack-(i-w/2));
-        for (int i=0;i<w+2*r+1;++i) b[i]=readBack(mark,write,(double)newBase+newFrac-(i-r-w/2));
+        const double analysisBack=std::max(0.0, double(w/2+r+1)-std::min(oldBack,newBack));
+        for (int i=0;i<w;++i) a[i]=readBack(mark,write,oldBack+analysisBack-(i-w/2));
+        for (int i=0;i<w+2*r+1;++i) b[i]=readBack(mark,write,newBack+analysisBack-(i-r-w/2));
         double ea=1.e-12; for (int i=0;i<w;++i) ea+=(double)a[i]*a[i];
         double best=-2,prev=0,next=0,cs[2*80+1]; int bi=0;
         for (int d=-r;d<=r;++d) {
@@ -191,8 +191,9 @@ void SyncVoice::jump(const std::vector<float>& original,int write,float baseDela
     if (pitched) {
         const int w=std::min(std::max(64,std::min(480,(int)(1.25f*period))),480);
         const double oldBack=baseDelay+delay, newBack=oldBack+step+refine;
+        const double analysisBack=std::max(0.0, double(w/2+1)-std::min(oldBack,newBack));
         double ab=0,aa=1.e-12,bb=1.e-12;
-        for (int i=0;i<w;++i) { const float u=readBack(original,write,oldBack-(i-w/2)), v=readBack(original,write,newBack-(i-w/2)); ab+=(double)u*v; aa+=(double)u*u; bb+=(double)v*v; }
+        for (int i=0;i<w;++i) { const float u=readBack(original,write,oldBack+analysisBack-(i-w/2)), v=readBack(original,write,newBack+analysisBack-(i-w/2)); ab+=(double)u*v; aa+=(double)u*u; bb+=(double)v*v; }
         fullRho=(float)std::max(0.0,std::min(1.0,ab/std::sqrt(aa*bb)));
     }
     oldDelay=delay; delay+=step+refine;
@@ -497,14 +498,16 @@ void ChoirEffect::processVoices(float mono,float* voicesOut) {
     }
     const bool useSync=syncMix>0.f, useLegacy=syncMix<1.f;
     SyncContext syncCtx;
+    // Keep marks current during the legacy engine, including while Pitch Sync is off.
+    // Otherwise enabling it on a held vocal searches stale marks from an earlier phrase.
+    markLp1+=markCoef*(pitchedInput-markLp1); markLp2+=markCoef*(markLp1-markLp2);
+    markHistory[(size_t)write]=markLp2;
     if (useSync) {
-        markLp1+=markCoef*(pitchedInput-markLp1); markLp2+=markCoef*(markLp1-markLp2);
-        markHistory[(size_t)write]=markLp2;
         if (tracker.midi()>=0.f && tracker.confidence()>.55f) {
             if (pitchUpdated || syncPeriod<=0.f) syncPeriod=bound(sr/(440.f*std::pow(2.f,(tracker.midi()-69.f)/12.f)),sr/1000.f,sr/60.f);
         } else syncPeriod=0.f;
         syncCtx.sampleRate=sr; syncCtx.period=syncPeriod; syncCtx.mark=&markHistory;
-    }
+    } else syncPeriod=0.f;
     steerWindow();
     constexpr float kVibGain=.9f;   // the tracker's 32 ms window smooths the vibrato it measures; calibrated in tests/vibrato_stack_tests.cpp
     // VIBRATO SPREAD (opt-in): every voice copies the lead's vibrato because it re-plays the lead. Here each singer bends it by their own amount (a
@@ -529,10 +532,14 @@ void ChoirEffect::processVoices(float mono,float* voicesOut) {
             vibPos=(vibPos+1)%(int)vibRing.size();
             static const float spreadSet[4]={-1.f,-.35f,.35f,1.f};
             bool settled=vs<=0.f;
+            // Four distinct targets are shared across the sixteen singers.
+            // Preserve the original expression and mapping, avoid redundant exp2 calls.
+            float targets[4]={1.f,1.f,1.f,1.f};
+            if (vs>0.f) for (int j=0;j<4;++j)
+                targets[j]=std::exp2(kVibGain*vs*spreadSet[j]*dev/12.f);
             for (int i=0;i<sections;++i) for (int j=0;j<singers;++j) {
                 const int k=i*singers+j;
-                // measured at full spread: depths from about 35% to 170% of the lead's
-                const float target=vs>0.f?std::exp2(kVibGain*vs*spreadSet[(j+i)%4]*dev/12.f):1.f;
+                const float target=targets[(j+i)%4];
                 float& m=layers[(size_t)k].vibMul; m+=.007f*(target-m);
                 if (vs<=0.f && std::fabs(m-1.f)>1.e-6f) settled=false;
                 syncLayers[(size_t)k].vibMul=m;

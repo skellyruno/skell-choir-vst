@@ -922,7 +922,7 @@ OmniChoirAudioProcessorEditor::OmniChoirAudioProcessorEditor(OmniChoirAudioProce
     addKnob("BREATH","choirBreath",pageVoice,"Breathiness of the synthesised singers.",ValueFormat::Percent);
     addKnob("VIBRATO","vibrato",pageVoice,"Vibrato of the synthesised singers.",ValueFormat::Percent);
     addKnob("TONE AMOUNT","toneAmount",pageVoice,"How strong the T keys on the stage are. 100% is as designed; 0% turns the tone off; more is stronger.",ValueFormat::Percent);
-    addKnob("PHRASE BREATH","phraseBreath",pageVoice,"A soft breath from the choir as you start singing after a pause. 0% is off.",ValueFormat::Percent);
+    addKnob("INHALE","phraseBreath",pageVoice,"A soft breath from the choir as you start singing after a pause. 0% is off.",ValueFormat::Percent);
     addKnob("VIB SPREAD","vibeSpread",pageVoice,"Varies the vibrato depth of each harmony singer and the vocal tract of blended synthetic singers. 0% keeps the original response.",ValueFormat::Percent);
 
     autoLevelButton.setClickingTogglesState(true);
